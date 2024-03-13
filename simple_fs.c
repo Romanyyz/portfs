@@ -1,4 +1,4 @@
- #include <linux/kernel.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/fs.h>
 
@@ -18,7 +18,7 @@ static struct file_operations fops = {
     .iterate_shared = simplefs_iterate_shared, // open via ls
 };
 
-static struct inode_operations myfs_inode_ops = {
+static struct inode_operations inode_ops = {
     .create = simplefs_create,
     .unlink = simplefs_unlink,
 };
