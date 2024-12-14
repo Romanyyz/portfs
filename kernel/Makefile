@@ -1,4 +1,5 @@
-obj-m += simple_fs.o
+obj-m += portfs.o
+portfs-objs := super.o inode.o file.o storage.o
 
 PWD := $(CURDIR)
 
