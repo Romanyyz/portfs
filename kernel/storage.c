@@ -1,6 +1,6 @@
 #include "portfs.h"
 
-static int storage_init(void)
+int storage_init(void)
 {
     umode_t mode = S_IRUSR | S_IWUSR;
     storage_filp = filp_open(storage_path, O_RDWR, mode);

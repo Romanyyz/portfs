@@ -27,7 +27,7 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
                          struct dentry *dentry, umode_t mode, bool excl);
 static int portfsfs_unlink(struct inode *dir, struct dentry *dentry);
 static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx);
-static int storage_init(void);
+int storage_init(void);
 
 // Definition of structures
 static struct file_operations fops = {
@@ -50,23 +50,24 @@ static struct file_system_type portfs_type = {
 
 struct filetable_entry
 {
-    int fileStartBlock;
-    int sizeInBlocks;
+    uint32_t startBlock;
+    uint32_t sizeInBlocks;
+    uint32_t sizeInBytes;
     char name[64];
 };
 
 struct portfs_superblock {
-    int block_size;
-    int total_blocks;
-    int bitmap_start;      // Offset in blocks
-    int bitmap_size;       // Size in blocks
-    int filetable_start;   // Offset in blocks
-    int filetable_size;    // Size in blocks
-    int data_start;        // Offset in blocks
-    int data_blocks;
+    uint32_t block_size;
+    uint32_t total_blocks;
+    uint32_t bitmap_start;      // Offset in blocks
+    uint32_t bitmap_size;       // Size in blocks
+    uint32_t filetable_start;   // Offset in blocks
+    uint32_t filetable_size;    // Size in blocks
+    uint32_t data_start;        // Offset in blocks
 };
 
 struct portfs_disk_superblock {
+    __be34 magic_number;
     __be32 block_size;
     __be32 total_blocks;
     __be32 bitmap_start;      // Offset in blocks
@@ -74,7 +75,6 @@ struct portfs_disk_superblock {
     __be32 filetable_start;   // Offset in blocks
     __be32 filetable_size;    // Size in blocks
     __be32 data_start;        // Offset in blocks
-    __be32 data_blocks;
 };
 
 // Variables
