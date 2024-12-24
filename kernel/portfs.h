@@ -67,7 +67,7 @@ struct portfs_superblock {
 };
 
 struct portfs_disk_superblock {
-    __be34 magic_number;
+    __be32 magic_number;
     __be32 block_size;
     __be32 total_blocks;
     __be32 bitmap_start;      // Offset in blocks
