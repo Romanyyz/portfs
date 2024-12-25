@@ -9,8 +9,6 @@
 #include <linux/namei.h>
 #include <linux/user_namespace.h>
 
-#define PORTFS_BLOCK_SIZE 4096
-#define MYFS_MAGIC 0x18181818
 #define MAX_STORAGE_PATH 256
 
 // Function prototypes
@@ -50,31 +48,38 @@ static struct file_system_type portfs_type = {
 
 struct filetable_entry
 {
+    char name[128];
     uint32_t startBlock;
     uint32_t sizeInBlocks;
     uint32_t sizeInBytes;
-    char name[64];
 };
 
 struct portfs_superblock {
+    uint32_t magic_number;
     uint32_t block_size;
     uint32_t total_blocks;
-    uint32_t bitmap_start;      // Offset in blocks
-    uint32_t bitmap_size;       // Size in blocks
-    uint32_t filetable_start;   // Offset in blocks
-    uint32_t filetable_size;    // Size in blocks
-    uint32_t data_start;        // Offset in blocks
+    uint32_t block_bitmap_start; // Offset in blocks
+    uint32_t block_bitmap_size;  // Size in blocks
+    uint32_t filetable_start;    // Offset in blocks
+    uint32_t filetable_size;     // Size in blocks
+    uint32_t data_start;         // Offset in blocks
+    uint32_t checksum;
+    uint32_t max_file_count;
+    struct filetable_entry *filetable;
+    char *block_bitmap;
 };
 
 struct portfs_disk_superblock {
     __be32 magic_number;
     __be32 block_size;
     __be32 total_blocks;
-    __be32 bitmap_start;      // Offset in blocks
-    __be32 bitmap_size;       // Size in blocks
+    __be32 block_bitmap_start;      // Offset in blocks
+    __be32 block_bitmap_size;       // Size in blocks
     __be32 filetable_start;   // Offset in blocks
     __be32 filetable_size;    // Size in blocks
     __be32 data_start;        // Offset in blocks
+    __be32 checksum;
+    __be32 max_file_count;
 };
 
 // Variables
