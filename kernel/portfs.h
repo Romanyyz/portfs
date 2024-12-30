@@ -9,7 +9,6 @@
 #include <linux/namei.h>
 #include <linux/user_namespace.h>
 
-#define MAX_STORAGE_PATH 256
 
 // Function prototypes
 static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
@@ -25,7 +24,7 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
                          struct dentry *dentry, umode_t mode, bool excl);
 static int portfsfs_unlink(struct inode *dir, struct dentry *dentry);
 static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx);
-int storage_init(void);
+struct file* storage_init(char *path);
 
 // Definition of structures
 static struct file_operations fops = {
@@ -45,6 +44,7 @@ static struct file_system_type portfs_type = {
     .kill_sb = kill_litter_super,
     .fs_flags = FS_USERNS_MOUNT,
 };
+
 
 struct filetable_entry
 {
@@ -84,8 +84,5 @@ struct portfs_disk_superblock {
 
 // Variables
 static uint64_t total_blocks = 0;
-static char *block_bitmap;
-static struct file* storage_filp = NULL;
-static char storage_path[MAX_STORAGE_PATH] = { 0 };
 
 #endif // PORTFS_H

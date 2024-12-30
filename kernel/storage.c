@@ -1,13 +1,15 @@
 #include "portfs.h"
 
-int storage_init(void)
+struct file* storage_init(char *path)
 {
+    pr_info("storage_init: Recieved file path %s\n", path);
     umode_t mode = S_IRUSR | S_IWUSR;
-    storage_filp = filp_open(storage_path, O_RDWR, mode);
+    struct file *storage_filp = NULL;
+    storage_filp = filp_open(path, O_RDWR, mode);
     if (IS_ERR(storage_filp))
     {
-        pr_err("Failed to open file: %s\n", storage_path);
-        return (int)PTR_ERR(storage_filp);
+        pr_err("storage_init: Failed to open file: %s, error: %ld\n", path, PTR_ERR(storage_filp));
+        return storage_filp;
     }
     if (storage_filp->f_inode)
     {
@@ -16,7 +18,8 @@ int storage_init(void)
     }
     else
     {
-        pr_err("Invalid inode for file %s\n", storage_path);
+        pr_err("Invalid inode for file %s\n", path);
+        return ERR_PTR(-EINVAL);
     }
-    return 0;
+    return storage_filp;
 }
