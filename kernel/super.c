@@ -226,7 +226,7 @@ static int portfs_init_fs_data(void *data)
 
 static int portfs_fill_super(struct super_block *sb, void *data, int silent)
 {
-    pr_info("portfs_fill_super: Beginning\n");
+    pr_info("portfs_fill_super: Started\n");
     struct portfs_disk_superblock *dsb = (struct portfs_disk_superblock *)kmalloc(sizeof(struct portfs_disk_superblock), GFP_KERNEL);
     if (!dsb)
     {
