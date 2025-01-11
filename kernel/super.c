@@ -1,6 +1,6 @@
 #include "portfs.h"
 
-#define PORTFS_MAGIC 0x18181818
+#define PORTFS_MAGIC 0x506F5254
 #define MAX_STORAGE_PATH 256
 
 
@@ -12,8 +12,14 @@ static void portfs_put_super(struct super_block *sb) {
     if (!msb)
         return;
 
-    kfree(msb->filetable);
-    kfree(msb->block_bitmap);
+    if (msb->filetable)
+        kfree(msb->filetable);
+    if (msb->block_bitmap)
+        kfree(msb->block_bitmap);
+    
+    kfree(msb);
+    sb->s_fs_info = NULL;
+    kill_litter_sb(sb);
 }
 
 
@@ -52,18 +58,22 @@ static struct portfs_superblock *portfs_init_superblock(void)
 
     struct portfs_disk_superblock *dsb =
         (struct portfs_disk_superblock *)kmalloc(sizeof(struct portfs_disk_superblock), GFP_KERNEL);
-    pr_info("portfs_init_superblock: dsb allocation %s\n", dsb ? "succeeded" : "failed");
+    if (!dsb)
+    {
+        pr_err("portfs_init_superblock: Could not allocate memory for "
+               "struct portfs_disk_superblock");
+        return ERR_PTR(-ENOMEM);
+    }
 
     struct portfs_superblock *msb =
         (struct portfs_superblock *)kmalloc(sizeof(struct portfs_superblock), GFP_KERNEL);
-    pr_info("portfs_init_superblock: msb allocation %s\n", msb ? "succeeded" : "failed");
-
-    if (!msb || !dsb)
+    if (!msb)
     {
         pr_err("portfs_init_superblock: Could not allocate memory for "
-               "struct portfs_superblock or struct portfs_disk_superblock");
+               "struct portfs_superblock");
         return ERR_PTR(-ENOMEM);
     }
+
     loff_t pos = 0;
     ssize_t bytes_read = kernel_read(storage_filp,
                                      dsb,
@@ -175,7 +185,7 @@ static int portfs_init_block_bitmap(struct portfs_superblock * msb)
 }
 
 
-static int portfs_init_fs_data(void *data)
+static int portfs_init_fs_data(struct super_block *sb, void *data)
 {
     pr_info("portfs_init_fs_data: Initializing portfs service data\n");
     char *options = (char*)data;
@@ -190,7 +200,7 @@ static int portfs_init_fs_data(void *data)
     }
 
     pr_info("portfs_init_fs_data: Mounting filesystem with storage file: %s\n", storage_path);
-    storage_filp = storage_init(storage_path);
+    storage_filp = portfs_storage_init(storage_path);
     if (IS_ERR(storage_filp))
     {
         pr_err("portfs_init_fs_data: Error initializing storage\n");
@@ -204,6 +214,8 @@ static int portfs_init_fs_data(void *data)
         pr_err("portfs_init_fs_data: Error initializing superblock\n");
         return PTR_ERR(msb);
     }
+    sb->s_fs_info = msb;
+
     pr_info("portfs_init_fs_data: Initializing filetable\n");
     int err = 0;
     err = portfs_init_filetable(msb);
@@ -222,23 +234,17 @@ static int portfs_init_fs_data(void *data)
     pr_info("portfs_init_fs_data: Finished\n");
     return 0;
 }
+    .owner = THIS_MODULE,
 
 
 static int portfs_fill_super(struct super_block *sb, void *data, int silent)
 {
     pr_info("portfs_fill_super: Started\n");
-    struct portfs_disk_superblock *dsb = (struct portfs_disk_superblock *)kmalloc(sizeof(struct portfs_disk_superblock), GFP_KERNEL);
-    if (!dsb)
-    {
-        pr_err("portfs_fill_super: Failed to allocate memory for portfs_disk_superblock\n");
-        return -ENOMEM;
-    }
     pr_info("portfs_fill_super: Calling portfs_init_fs_data()\n");
     int err = portfs_init_fs_data(data);
     if (err)
     {
         pr_err("portfs_fill_super: Error initializing fs meta data\n");
-        kfree(dsb);
         return err;
     }
 
@@ -251,7 +257,6 @@ static int portfs_fill_super(struct super_block *sb, void *data, int silent)
     if (!root_inode)
     {
         pr_err("portfs_fill_super: Failed to create root_inode\n");
-        kfree(dsb);
         filp_close(storage_filp, NULL);
         return -ENOMEM;
     }
@@ -267,7 +272,6 @@ static int portfs_fill_super(struct super_block *sb, void *data, int silent)
     if (!sb->s_root) {
         pr_err("portfs_fill_super: Failed to make_root\n");
         iput(root_inode);
-        kfree(dsb);
         filp_close(storage_filp, NULL);
         return -ENOMEM;
     }
