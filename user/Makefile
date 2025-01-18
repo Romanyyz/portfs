@@ -1,9 +1,12 @@
 TARGET = portfs_tool
 
+PROJECT_ROOT := $(abspath ..)
+
 CXX = g++
 CXXFLAGS = -std=c++20 -Wall -Wextra -O3
+CXXFLAGS := -I$(PROJECT_ROOT)/common
 
-SRCS = main.cpp
+SRCS = main.cpp UIManager.cpp StorageManager.cpp
 OBJS = $(SRCS:.cpp=.o)
 
 all: $(TARGET)

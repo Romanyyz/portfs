@@ -1,4 +1,5 @@
 #include "portfs.h"
+#include "../common/shared_structs.h"
 
 #define PORTFS_MAGIC 0x506F5254
 #define MAX_STORAGE_PATH 256
@@ -110,45 +111,38 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
     loff_t offset = msb->filetable_start * msb->block_size;
     size_t total_size = msb->filetable_size * msb->block_size;
     ssize_t bytes_read = 0;
-    char* buffer = NULL;
 
-    buffer = kmalloc(total_size, GFP_KERNEL);
-    if (!buffer)
+    msb->filetable = kmalloc(total_size, GFP_KERNEL);
+    if (!(msb->filetable))
     {
         pr_err("portfs_init_filetable: Could not allocate memory\n");
         return -ENOMEM;
     }
 
-    bytes_read = kernel_read(storage_filp, buffer, total_size, &offset);
+    bytes_read = kernel_read(storage_filp, msb->filetable, total_size, &offset);
     if (bytes_read < 0)
     {
         pr_err("portfs_init_filetable: Failed to read filetable: %zd\n", bytes_read);
-        kfree(buffer);
+        kfree(msb->filetable);
+        msb->filetable = NULL;
         return bytes_read;
     }
     if (bytes_read != total_size)
     {
         pr_err("portfs_init_filetable: Incomplete read of filetable: expected %zu, got %zd\n",
                total_size, bytes_read);
-        kfree(buffer);
+        kfree(msb->filetable);
+        msb->filetable = NULL;
         return -EIO;
-    }
-
-    msb->filetable = kmalloc(total_size, GFP_KERNEL);
-    if (!(msb->filetable))
-    {
-        pr_err("portfs_init_filetable: Could not allocate memory\n");
-        kfree(buffer);
-        return -ENOMEM;
     }
 
     for (int i = 0; i < msb->max_file_count; ++i)
     {
-        memcpy(&msb->filetable[i],
-               buffer + i * sizeof(struct filetable_entry),
-               sizeof(struct filetable_entry));
+        struct filetable_entry *entry = &msb->filetable[i];
+        entry->startBlock = be32_to_cpu(entry->startBlock);
+        entry->sizeInBlocks = be32_to_cpu(entry->sizeInBlocks);
+        entry->sizeInBytes = be32_to_cpu(entry->sizeInBytes);
     }
-    kfree(buffer);
     pr_info("portfs_init_filetable: Filetable read successfully\n");
     return 0;
 }
