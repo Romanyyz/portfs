@@ -12,7 +12,7 @@
 struct portfs_disk_superblock {
     __be32 magic_number;
     __be32 block_size;
-    __be64 total_blocks;
+    __be32 total_blocks;
     __be32 filetable_start;    // Offset in blocks
     __be32 filetable_size;     // Size in blocks
     __be32 block_bitmap_start; // Offset in blocks
@@ -24,7 +24,7 @@ struct portfs_disk_superblock {
     __be64 last_mount_time;
     __be64 last_write_time;
     __be32 flags;
-};
+} __attribute__((packed));
 
 struct disk_filetable_entry
 {
@@ -49,7 +49,7 @@ struct filetable_entry
 struct portfs_superblock {
     uint32_t magic_number;
     uint32_t block_size;
-    uint64_t total_blocks;
+    uint32_t total_blocks;
     uint32_t filetable_start;    // Offset in blocks
     uint32_t filetable_size;     // Size in blocks
     uint32_t block_bitmap_start; // Offset in blocks

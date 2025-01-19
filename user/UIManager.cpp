@@ -48,7 +48,7 @@ void UIManager::askFileSize()
     {
         std::cout << "\nFile successfuly created.";
         std::cout << "\nFormatting file...";
-        storageManager.formatStorage(filePath);
+        storageManager.formatStorage();
         askMountPortfs(filePath);
     }
     else

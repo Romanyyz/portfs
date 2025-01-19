@@ -17,5 +17,4 @@ private:
     void askFileSize();
     void askExistingFile();
     void askMountPortfs(const std::string& storageFilePath);
-
 };
