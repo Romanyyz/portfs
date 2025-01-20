@@ -1,5 +1,6 @@
 #include "UIManager.h"
 
+#include <filesystem>
 #include <iostream>
 
 void UIManager::stringToLower(std::string& str)
@@ -94,13 +95,24 @@ void UIManager::askMountPortfs(const std::string& storageFilePath)
     if (answer == "yes" || answer == "y")
     {
         std::cout << "\nEnter path to mount directory: ";
-        std::string mountDirPath;
+        std::filesystem::path mountDirPath;
         std::cin >> mountDirPath;
-        std::cout << "\nDirectory " << mountDirPath << " will be used.";
-        storageManager.mountPortfs(mountDirPath, storageFilePath);
+        if (std::filesystem::exists(mountDirPath)
+            && std::filesystem::is_directory(mountDirPath))
+        {
+            std::cout << "\nDirectory " << mountDirPath << " will be used.";
+            storageManager.mountPortfs(mountDirPath, storageFilePath);
+        }
+        else
+        {
+            std::cerr << "\nMount directory must exist. Exiting...";
+            return;
+        }
+
     }
     else if (answer == "no" || answer == "n")
     {
+        std::cerr << "\nExiting...";
         return;
     }
     else

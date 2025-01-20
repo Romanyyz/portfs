@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/mount.h>
 
 #include <iostream>
 #include <fstream>
@@ -54,12 +55,6 @@ int  StorageManager::formatStorage()
     }
 
     return 0;
-}
-
-
-void StorageManager::mountPortfs(const std::string& mountDirPath, const std::string& filePath)
-{
-    std::cout<<mountDirPath<<filePath;
 }
 
 
@@ -210,3 +205,23 @@ int StorageManager::writeBlockBitmap(const portfs_superblock& msb)
     file.close();
     return 0;
 }
+
+
+int StorageManager::mountPortfs(const std::filesystem::path& mountDirPath,
+                                const std::filesystem::path& storageFilePath)
+{
+    const std::string source{"none"};
+    const std::string filesystemtype{"portfs"};
+    const std::string options{std::string{"path="} + storageFilePath.c_str()};
+
+    if (mount(source.c_str(), mountDirPath.c_str(),
+              filesystemtype.c_str(), 0, options.c_str()) != 0)
+    {
+        perror("Mount failed");
+        return -1;
+    }
+
+    std::cout << "\nPortFS mounted successfully!" << std::endl;
+    return 0;
+}
+
