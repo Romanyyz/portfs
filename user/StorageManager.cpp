@@ -1,5 +1,6 @@
 #include "StorageManager.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
 #include <unistd.h>
@@ -140,12 +141,15 @@ int StorageManager::writeFileTable(const portfs_superblock& msb)
         return -1;
     }
 
-    constexpr size_t BUFFER_SIZE{1 * 1024 * 1024};
+    constexpr size_t BUFFER_SIZE{1 * 1024 * 1024}; // 1MB
     filetable_entry entry{};
     entry.name[0] = '\0';
-    entry.sizeInBlocks = 0;
     entry.sizeInBytes = 0;
-    entry.startBlock = 0;
+    entry.extentCount = 0;
+    for (size_t i = 0; i < MAX_EXTENTS; ++i)
+    {
+        entry.extents[i] = {0,0};
+    }
 
     std::vector<filetable_entry> buffer;
     buffer.reserve(BUFFER_SIZE / sizeof(filetable_entry));

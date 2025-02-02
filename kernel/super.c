@@ -20,7 +20,7 @@ static void portfs_put_super(struct super_block *sb) {
     
     kfree(msb);
     sb->s_fs_info = NULL;
-    kill_litter_sb(sb);
+    kill_litter_super(sb);
 }
 
 
@@ -139,9 +139,14 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
     for (int i = 0; i < msb->max_file_count; ++i)
     {
         struct filetable_entry *entry = &msb->filetable[i];
-        entry->startBlock = be32_to_cpu(entry->startBlock);
-        entry->sizeInBlocks = be32_to_cpu(entry->sizeInBlocks);
+
         entry->sizeInBytes = be32_to_cpu(entry->sizeInBytes);
+        entry->extentCount = be32_to_cpu(entry->extentCount);
+        for (size_t i = 0; i < entry->extentCount; ++i)
+        {
+            entry->extents[i].startBlock = be32_to_cpu(entry->extents[i].startBlock);
+            entry->extents[i].length = be32_to_cpu(entry->extents[i].length);
+        }
     }
     pr_info("portfs_init_filetable: Filetable read successfully\n");
     return 0;
@@ -228,14 +233,13 @@ static int portfs_init_fs_data(struct super_block *sb, void *data)
     pr_info("portfs_init_fs_data: Finished\n");
     return 0;
 }
-    .owner = THIS_MODULE,
 
 
 static int portfs_fill_super(struct super_block *sb, void *data, int silent)
 {
     pr_info("portfs_fill_super: Started\n");
     pr_info("portfs_fill_super: Calling portfs_init_fs_data()\n");
-    int err = portfs_init_fs_data(data);
+    int err = portfs_init_fs_data(sb, data);
     if (err)
     {
         pr_err("portfs_fill_super: Error initializing fs meta data\n");

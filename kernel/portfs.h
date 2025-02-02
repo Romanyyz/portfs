@@ -24,18 +24,7 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
                          struct dentry *dentry, umode_t mode, bool excl);
 static int portfsfs_unlink(struct inode *dir, struct dentry *dentry);
 static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx);
-struct file* storage_init(char *path);
-
-// Definition of structures
-static struct file_operations fops = {
-    .owner = THIS_MODULE,
-    .iterate_shared = portfs_iterate_shared, // open via ls
-};
-
-static struct inode_operations inode_ops = {
-    .create = portfs_create,
-    .unlink = portfs_unlink,
-};
+struct file* portfs_storage_init(char *path);
 
 static struct file_system_type portfs_type = {
     .owner = THIS_MODULE,
@@ -45,7 +34,5 @@ static struct file_system_type portfs_type = {
     .fs_flags = FS_USERNS_MOUNT,
 };
 
-// Variables
-static uint64_t total_blocks = 0;
 
 #endif // PORTFS_H

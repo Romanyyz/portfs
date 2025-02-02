@@ -7,6 +7,9 @@
 #include <cstdint>
 #endif // __KERNEL__
 
+//const uint16_t MAX_EXTENTS = 8;
+#define MAX_EXTENTS 8
+
 #ifdef __KERNEL__
 
 struct portfs_disk_superblock {
@@ -35,18 +38,27 @@ struct disk_filetable_entry
 };
 #endif // __KERNEL__
 
+#ifdef __cplusplus
 extern "C"
 {
+#endif
+
+struct extent
+{
+    uint32_t startBlock;
+    uint32_t length;
+} __attribute__((packed));
 
 struct filetable_entry
 {
     char name[64];
-    uint64_t startBlock;
-    uint64_t sizeInBlocks;
     uint64_t sizeInBytes;
-};
+    uint16_t extentCount;
+    struct extent extents[MAX_EXTENTS];
+} __attribute__((packed));
 
-struct portfs_superblock {
+struct portfs_superblock
+{
     uint32_t magic_number;
     uint32_t block_size;
     uint32_t total_blocks;
@@ -70,6 +82,8 @@ struct portfs_superblock {
 #endif
 } __attribute__((packed));
 
+#ifdef __cplusplus
 } // extern "C"
+#endif
 
 #endif // SHARED_STRUCTS_H
