@@ -8,6 +8,7 @@
 #include <linux/types.h>
 #include <linux/namei.h>
 #include <linux/user_namespace.h>
+#include <linux/vmalloc.h>
 
 
 // Function prototypes

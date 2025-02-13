@@ -81,8 +81,12 @@ static struct inode *portfs_get_inode_by_name(struct super_block *sb, const char
             inode->i_gid = current_fsgid();
             inode->i_size = file_entry->sizeInBytes;
             inode->i_sb = sb;
-            inode->i_atime = inode->i_mtime = current_time(inode);
-            inode_set_ctime_current(inode);
+
+            time64_t now = ktime_get_real_seconds();
+            inode->i_atime_sec = now;
+            inode->i_mtime_sec = now;
+            inode->i_ctime_sec = now;
+
             inode->i_op = &portfs_file_inode_operations;
             inode->i_fop = &portfs_file_operations;
             inode->i_private = file_entry;
@@ -116,8 +120,12 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
     inode->i_gid = current_fsgid();
     inode->i_size = 0;
     inode->i_sb = sb;
-    inode->i_atime = inode->i_mtime = current_time(inode);
-    inode_set_ctime_current(inode);
+
+    time64_t now = ktime_get_real_seconds();
+    inode->i_atime_sec = now;
+    inode->i_mtime_sec = now;
+    inode->i_ctime_sec = now;
+
     inode->i_fop = &portfs_file_operations;
 
     file_entry = portfs_find_file_entry(sb);
@@ -174,7 +182,6 @@ static struct dentry *portfs_lookup(struct inode *dir, struct dentry *dentry,
                                     unsigned int flags)
 {
     struct super_block *sb = dir->i_sb;
-    struct portfs_superblock *psb = sb->s_fs_info;
     struct inode *inode = NULL;
 
      if (dentry->d_name.len == 0 || dentry->d_name.len > NAME_MAX) {

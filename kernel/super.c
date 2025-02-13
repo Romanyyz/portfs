@@ -14,7 +14,7 @@ static void portfs_put_super(struct super_block *sb) {
         return;
 
     if (msb->filetable)
-        kfree(msb->filetable);
+        vfree(msb->filetable);
     if (msb->block_bitmap)
         kfree(msb->block_bitmap);
     
@@ -110,15 +110,15 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
 
     loff_t offset = msb->filetable_start * msb->block_size;
     size_t total_size = msb->filetable_size * msb->block_size;
-    ssize_t bytes_read = 0;
 
-    msb->filetable = kmalloc(total_size, GFP_KERNEL);
+    msb->filetable = vmalloc(total_size);
     if (!(msb->filetable))
     {
-        pr_err("portfs_init_filetable: Could not allocate memory\n");
+        pr_err("portfs_init_filetable: Could not allocate memory, size is %zu\n", total_size);
         return -ENOMEM;
     }
 
+    ssize_t bytes_read = 0;
     bytes_read = kernel_read(storage_filp, msb->filetable, total_size, &offset);
     if (bytes_read < 0)
     {
@@ -302,7 +302,8 @@ static int __init portfs_init(void)
 static void __exit portfs_exit(void)
 {
     unregister_filesystem(&portfs_type);
-    filp_close(storage_filp, NULL);
+    if (storage_filp)
+        filp_close(storage_filp, NULL);
     pr_info("portfs unloaded.\n");
 }
 

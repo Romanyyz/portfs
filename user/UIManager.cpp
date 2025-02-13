@@ -112,7 +112,7 @@ void UIManager::askMountPortfs(const std::string& storageFilePath)
     }
     else if (answer == "no" || answer == "n")
     {
-        std::cerr << "\nExiting...";
+        std::cerr << "\nExiting...\n";
         return;
     }
     else
