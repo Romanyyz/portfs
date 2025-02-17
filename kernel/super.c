@@ -1,4 +1,6 @@
 #include "portfs.h"
+#include "inode.h"
+#include "file.h"
 #include "../common/shared_structs.h"
 
 #define PORTFS_MAGIC 0x506F5254
@@ -263,8 +265,8 @@ static int portfs_fill_super(struct super_block *sb, void *data, int silent)
     root_inode->i_ino = 1;
     root_inode->i_mode = S_IFDIR | 0755;
     root_inode->i_sb = sb;
-    root_inode->i_op = &simple_dir_inode_operations;
-    root_inode->i_fop = &simple_dir_operations;
+    root_inode->i_op = &portfs_dir_inode_operations;
+    root_inode->i_fop = &portfs_dir_file_operations;
 
     sb->s_root = d_make_root(root_inode);
     if (!sb->s_root) {

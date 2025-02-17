@@ -1,11 +1,37 @@
 #include "file.h"
 
 #include "portfs.h"
-
+#include "../common/shared_structs.h"
 
 static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx)
 {
-    // Read filesystem content
+    struct inode *inode = filp->f_inode;
+    struct portfs_superblock *psb = inode->i_sb->s_fs_info;
+
+    if (ctx->pos >= psb->max_file_count)
+        return 0;
+
+    if (!dir_emit_dots(filp, ctx))
+        return -ENOMEM;
+
+    const size_t max_files = psb->max_file_count;
+    size_t start_index = ctx->pos - 2;
+    pr_info("portfs_iterate_shared: Starting from index %zu", start_index);
+    for (size_t i = start_index; i < max_files; ++i)
+    {
+        struct filetable_entry *entry = &psb->filetable[i];
+        if (entry->name[0] == '\0')
+            continue;
+
+        pr_info("portfs_iterate_shared: Found file: %s at index %zu", entry->name, i);
+        if (!dir_emit(ctx, entry->name, strlen(entry->name), i, DT_REG))
+            return -ENOMEM;
+
+        ctx->pos = i + 1;
+    }
+
+    ctx->pos += 2;
+    pr_info("portfs_iterate_shared: Finished iteration, setting ctx->pos to %lld", ctx->pos);
     return 0;
 }
 

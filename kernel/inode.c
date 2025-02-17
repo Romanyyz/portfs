@@ -44,15 +44,18 @@ static inline void clear_blocks_allocated(uint8_t *bitmap, uint32_t block, uint3
 }
 
 
-static struct filetable_entry *portfs_find_file_entry(struct super_block *sb)
+static struct filetable_entry *portfs_find_free_file_entry(struct super_block *sb, size_t *index)
 {
     struct portfs_superblock *psb = sb->s_fs_info;
     struct filetable_entry *entry = psb->filetable;
 
-    for (size_t i = 0; i < psb->max_file_count; ++i, ++entry)
+    for ( int i = 0; i < psb->max_file_count; ++i, ++entry)
     {
         if (entry->name[0] == '\0')
+        {
+            *index = i;
             return entry;
+        }
     }
     return NULL;
 }
@@ -68,14 +71,12 @@ static struct inode *portfs_get_inode_by_name(struct super_block *sb, const char
         return ERR_PTR(-ENOMEM);
     }
 
-    size_t num_entries = (psb->filetable_size - psb->filetable_start)
-                         * psb->block_size / sizeof(struct filetable_entry);
     struct filetable_entry *file_entry = (struct filetable_entry *)psb->filetable;
-    for (size_t i = 0; i < num_entries; ++i, ++file_entry)
+    for (size_t i = 0; i < psb->max_file_count; ++i, ++file_entry)
     {
         if (strcmp(file_entry->name, name) == 0)
         {
-            inode->i_ino = get_next_ino();
+            inode->i_ino = i;
             inode->i_mode = S_IFREG | 0644; // -rw-r--r--
             inode->i_uid = current_fsuid();
             inode->i_gid = current_fsgid();
@@ -114,7 +115,6 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
     if (!inode)
         return -ENOMEM;
 
-    inode->i_ino = get_next_ino();
     inode->i_mode = S_IFREG | mode;
     inode->i_uid = current_fsuid();
     inode->i_gid = current_fsgid();
@@ -128,9 +128,12 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
 
     inode->i_fop = &portfs_file_operations;
 
-    file_entry = portfs_find_file_entry(sb);
+    size_t index = 0;
+    file_entry = portfs_find_free_file_entry(sb, &index);
     if (file_entry == NULL)
         return -ENOSPC;
+
+    inode->i_ino = index;
 
     memcpy(file_entry->name, dentry->d_name.name, sizeof(file_entry->name) - 1);
     inode->i_private = file_entry;
@@ -143,15 +146,15 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 static int portfs_unlink(struct inode *dir, struct dentry *dentry)
 {
-    struct inode *inode;
-    struct filetable_entry *file_entry;
-    struct super_block *sb = dir->i_sb;
-    struct portfs_superblock *psb = sb->s_fs_info;
-
-    pr_info("portfs_create: Removing file '%s'\n", dentry->d_name.name);
 
     if (!dentry->d_inode)
         return -EEXIST;
+
+    pr_info("portfs_unlink: Removing file '%s'\n", dentry->d_name.name);
+    struct inode *inode = dentry->d_inode;
+    struct filetable_entry *file_entry;
+    struct super_block *sb = dir->i_sb;
+    struct portfs_superblock *psb = sb->s_fs_info;
 
     file_entry = inode->i_private;
     if (!file_entry)
@@ -169,10 +172,13 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
     file_entry->sizeInBytes = 0;
     file_entry->extentCount = 0;
 
+    time64_t now = ktime_get_real_seconds();
+    dir->i_ctime_sec = dir->i_mtime_sec = now;
+
     inode->i_private = NULL;
 
-    dput(dentry);
-    iput(inode);
+    clear_nlink(inode);
+    mark_inode_dirty(inode);
 
     return 0;
 }
@@ -181,16 +187,30 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
 static struct dentry *portfs_lookup(struct inode *dir, struct dentry *dentry,
                                     unsigned int flags)
 {
+
+    if (!dentry || !dentry->d_name.name)
+    {
+        pr_err("portfs_lookup: NULL dentry or d_name.name\n");
+        return ERR_PTR(-EINVAL);
+    }
+
     struct super_block *sb = dir->i_sb;
     struct inode *inode = NULL;
 
-     if (dentry->d_name.len == 0 || dentry->d_name.len > NAME_MAX) {
+    if (dentry->d_name.len == 0 || dentry->d_name.len > NAME_MAX)
+    {
         return ERR_PTR(-ENAMETOOLONG);
     }
 
     inode = portfs_get_inode_by_name(sb, dentry->d_name.name);
-
-    d_instantiate(dentry, inode);
+    if (inode)
+    {
+        d_instantiate(dentry, inode);
+    }
+    else
+    {
+        d_add(dentry, NULL);
+    }
 
     return NULL;
 }
