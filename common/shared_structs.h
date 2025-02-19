@@ -35,6 +35,7 @@ struct disk_filetable_entry
     __be64 startBlock;
     __be64 sizeInBlocks;
     __be64 sizeInBytes;
+    __be64 ino;
 };
 #endif // __KERNEL__
 
@@ -52,6 +53,7 @@ struct extent
 struct filetable_entry
 {
     char name[64];
+    uint64_t ino;
     uint64_t sizeInBytes;
     uint16_t extentCount;
     struct extent extents[MAX_EXTENTS];

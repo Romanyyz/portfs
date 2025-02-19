@@ -44,7 +44,7 @@ static inline void clear_blocks_allocated(uint8_t *bitmap, uint32_t block, uint3
 }
 
 
-static struct filetable_entry *portfs_find_free_file_entry(struct super_block *sb, size_t *index)
+static struct filetable_entry *portfs_find_free_file_entry(struct super_block *sb)
 {
     struct portfs_superblock *psb = sb->s_fs_info;
     struct filetable_entry *entry = psb->filetable;
@@ -53,7 +53,6 @@ static struct filetable_entry *portfs_find_free_file_entry(struct super_block *s
     {
         if (entry->name[0] == '\0')
         {
-            *index = i;
             return entry;
         }
     }
@@ -64,38 +63,41 @@ static struct filetable_entry *portfs_find_free_file_entry(struct super_block *s
 static struct inode *portfs_get_inode_by_name(struct super_block *sb, const char *name)
 {
     struct portfs_superblock *psb = sb->s_fs_info;
-    struct inode *inode = new_inode(sb);
-    if (!inode)
-    {
-        pr_err("portfs_get_inode_by_name: Failed to allocate new inode\n");
-        return ERR_PTR(-ENOMEM);
-    }
+
 
     struct filetable_entry *file_entry = (struct filetable_entry *)psb->filetable;
     for (size_t i = 0; i < psb->max_file_count; ++i, ++file_entry)
     {
         if (strcmp(file_entry->name, name) == 0)
         {
-            inode->i_ino = i;
-            inode->i_mode = S_IFREG | 0644; // -rw-r--r--
-            inode->i_uid = current_fsuid();
-            inode->i_gid = current_fsgid();
-            inode->i_size = file_entry->sizeInBytes;
-            inode->i_sb = sb;
+            struct inode *inode = iget_locked(sb, file_entry->ino);
+            if (!inode)
+            {
+                pr_err("portfs_get_inode_by_name: Failed to allocate new inode\n");
+                return ERR_PTR(-ENOMEM);
+            }
+            if (inode->i_state & I_NEW)
+            {
+                inode->i_mode = S_IFREG | 0644; // -rw-r--r--
+                inode->i_uid = current_fsuid();
+                inode->i_gid = current_fsgid();
+                inode->i_size = file_entry->sizeInBytes;
+                inode->i_sb = sb;
 
-            time64_t now = ktime_get_real_seconds();
-            inode->i_atime_sec = now;
-            inode->i_mtime_sec = now;
-            inode->i_ctime_sec = now;
+                time64_t now = ktime_get_real_seconds();
+                inode->i_atime_sec = now;
+                inode->i_mtime_sec = now;
+                inode->i_ctime_sec = now;
 
-            inode->i_op = &portfs_file_inode_operations;
-            inode->i_fop = &portfs_file_operations;
-            inode->i_private = file_entry;
+                inode->i_op = &portfs_file_inode_operations;
+                inode->i_fop = &portfs_file_operations;
+                inode->i_private = file_entry;
+
+                unlock_new_inode(inode);
+            }
             return inode;
         }
     }
-
-    iput(inode);
     return NULL;
 }
 
@@ -106,40 +108,48 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
     struct filetable_entry *file_entry;
     struct super_block *sb = dir->i_sb;
 
+    if (!S_ISREG(mode))
+    {
+        return -EOPNOTSUPP;
+    }
+
     pr_info("portfs_create: Creating file '%s'\n", dentry->d_name.name);
 
     if (dentry->d_inode)
         return -EEXIST;
 
-    inode = new_inode(sb);
+    inode = iget_locked(sb, iunique(sb, 2));
     if (!inode)
         return -ENOMEM;
+    if (inode->i_state & I_NEW)
+    {
+        inode->i_mode = S_IFREG | mode;
+        inode->i_uid = current_fsuid();
+        inode->i_gid = current_fsgid();
+        inode->i_size = 0;
+        inode->i_sb = sb;
 
-    inode->i_mode = S_IFREG | mode;
-    inode->i_uid = current_fsuid();
-    inode->i_gid = current_fsgid();
-    inode->i_size = 0;
-    inode->i_sb = sb;
+        time64_t now = ktime_get_real_seconds();
+        inode->i_atime_sec = now;
+        inode->i_mtime_sec = now;
+        inode->i_ctime_sec = now;
 
-    time64_t now = ktime_get_real_seconds();
-    inode->i_atime_sec = now;
-    inode->i_mtime_sec = now;
-    inode->i_ctime_sec = now;
+        inode->i_op = &portfs_file_inode_operations;
+        inode->i_fop = &portfs_file_operations;
 
-    inode->i_fop = &portfs_file_operations;
+        unlock_new_inode(inode);
+    }
 
-    size_t index = 0;
-    file_entry = portfs_find_free_file_entry(sb, &index);
+    file_entry = portfs_find_free_file_entry(sb);
     if (file_entry == NULL)
         return -ENOSPC;
 
-    inode->i_ino = index;
-
     memcpy(file_entry->name, dentry->d_name.name, sizeof(file_entry->name) - 1);
+    file_entry->ino = inode->i_ino;
+
     inode->i_private = file_entry;
 
     d_instantiate(dentry, inode);
-    dget(dentry);
 
     return 0;
 }
@@ -148,7 +158,7 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
 {
 
     if (!dentry->d_inode)
-        return -EEXIST;
+        return -ENOENT;
 
     pr_info("portfs_unlink: Removing file '%s'\n", dentry->d_name.name);
     struct inode *inode = dentry->d_inode;
@@ -165,12 +175,8 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
         clear_blocks_allocated(psb->block_bitmap,
                                file_entry->extents[i].startBlock,
                                file_entry->extents[i].length);
-        file_entry->extents[i].startBlock = 0;
-        file_entry->extents[i].length = 0;
     }
-    file_entry->name[0] = '\0';
-    file_entry->sizeInBytes = 0;
-    file_entry->extentCount = 0;
+    memset(file_entry, 0, sizeof(struct filetable_entry));
 
     time64_t now = ktime_get_real_seconds();
     dir->i_ctime_sec = dir->i_mtime_sec = now;
@@ -205,7 +211,7 @@ static struct dentry *portfs_lookup(struct inode *dir, struct dentry *dentry,
     inode = portfs_get_inode_by_name(sb, dentry->d_name.name);
     if (inode)
     {
-        d_instantiate(dentry, inode);
+        d_splice_alias(inode, dentry);
     }
     else
     {

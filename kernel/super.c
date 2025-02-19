@@ -10,7 +10,8 @@
 static char storage_path[MAX_STORAGE_PATH];
 static struct file* storage_filp = NULL;
 
-static void portfs_put_super(struct super_block *sb) {
+static void portfs_put_super(struct super_block *sb)
+{
     struct portfs_superblock *msb = sb->s_fs_info;
     if (!msb)
         return;
@@ -22,12 +23,21 @@ static void portfs_put_super(struct super_block *sb) {
     
     kfree(msb);
     sb->s_fs_info = NULL;
-    kill_litter_super(sb);
+    generic_shutdown_super(sb);
+}
+
+
+static void portfs_evict_inode(struct inode *inode)
+{
+    pr_info("portfs_evict_inode: inode %lu\n", inode->i_ino);
+    inode->i_private = NULL;
+    clear_inode(inode);
 }
 
 
 static const struct super_operations portfs_super_ops = {
     .put_super = portfs_put_super,
+    .evict_inode = portfs_evict_inode,
 };
 
 
@@ -144,6 +154,7 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
 
         entry->sizeInBytes = be32_to_cpu(entry->sizeInBytes);
         entry->extentCount = be32_to_cpu(entry->extentCount);
+        entry->ino         = be32_to_cpu(entry->ino);
         for (size_t i = 0; i < entry->extentCount; ++i)
         {
             entry->extents[i].startBlock = be32_to_cpu(entry->extents[i].startBlock);

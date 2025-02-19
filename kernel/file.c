@@ -15,22 +15,23 @@ static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx)
         return -ENOMEM;
 
     const size_t max_files = psb->max_file_count;
-    size_t start_index = ctx->pos - 2;
+    const size_t start_index = ctx->pos - 2;
     pr_info("portfs_iterate_shared: Starting from index %zu", start_index);
     for (size_t i = start_index; i < max_files; ++i)
     {
-        struct filetable_entry *entry = &psb->filetable[i];
-        if (entry->name[0] == '\0')
+        struct filetable_entry *file_entry = &psb->filetable[i];
+        if (file_entry->name[0] == '\0')
             continue;
 
-        pr_info("portfs_iterate_shared: Found file: %s at index %zu", entry->name, i);
-        if (!dir_emit(ctx, entry->name, strlen(entry->name), i, DT_REG))
+        pr_info("portfs_iterate_shared: Found file: %s at index %zu", file_entry->name, i);
+        if (!dir_emit(ctx, file_entry->name, strlen(file_entry->name), file_entry->ino, DT_REG))
             return -ENOMEM;
 
         ctx->pos = i + 1;
     }
 
     ctx->pos += 2;
+
     pr_info("portfs_iterate_shared: Finished iteration, setting ctx->pos to %lld", ctx->pos);
     return 0;
 }

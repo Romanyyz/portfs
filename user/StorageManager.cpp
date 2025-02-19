@@ -146,6 +146,7 @@ int StorageManager::writeFileTable(const portfs_superblock& msb)
     entry.name[0] = '\0';
     entry.sizeInBytes = 0;
     entry.extentCount = 0;
+    entry.ino = 0;
     for (size_t i = 0; i < MAX_EXTENTS; ++i)
     {
         entry.extents[i] = {0,0};
