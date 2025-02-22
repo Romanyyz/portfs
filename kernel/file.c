@@ -1,24 +1,11 @@
 #include "file.h"
 
 #include "portfs.h"
+#include "bitmap.h"
 #include "shared_structs.h"
 
 #define BLOCK_ALLOC_SCALE 1000
 #define BLOCK_ALLOC_MULTIPLIER 1500
-
-static inline void set_block_allocated(uint8_t *bitmap, uint32_t block)
-{
-    // TODO: probably need to lock bitmap
-    bitmap[block / 8] |= (1 << (block % 8));
-}
-
-
-static inline int is_block_allocated(uint8_t *bitmap, uint32_t block)
-{
-    // TODO: probably need to lock bitmap
-    return bitmap[block / 8] & (1 << (block % 8));
-}
-
 
 static int allocate_extent(size_t bytes_to_allocate, struct portfs_superblock *psb, struct extent *extent)
 {
