@@ -46,7 +46,7 @@ extern "C"
 
 struct extent
 {
-    uint32_t startBlock;
+    uint32_t start_block;
     uint32_t length;
 } __attribute__((packed));
 

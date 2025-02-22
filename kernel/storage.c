@@ -1,5 +1,5 @@
 #include "portfs.h"
-#include "../common/shared_structs.h"
+#include "shared_structs.h"
 
 struct file* portfs_storage_init(char *path)
 {

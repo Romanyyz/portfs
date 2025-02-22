@@ -2,30 +2,35 @@
 
 #include "file.h"
 #include "portfs.h"
-#include "../common/shared_structs.h"
+#include "shared_structs.h"
 
 
 static inline int is_block_allocated(uint8_t *bitmap, uint32_t block)
 {
+    // TODO: probably need to lock bitmap
     return bitmap[block / 8] & (1 << (block % 8));
 }
 
 
 static inline void set_block_allocated(uint8_t *bitmap, uint32_t block)
 {
+    // TODO: probably need to lock bitmap
     bitmap[block / 8] |= (1 << (block % 8));
 }
 
 
 static inline void clear_block_allocated(uint8_t *bitmap, uint32_t block)
 {
+    // TODO: probably need to lock bitmap
     bitmap[block / 8] &= ~(1 << (block % 8));
 }
 
 
 static inline int find_free_block(uint8_t *bitmap, uint32_t total_blocks)
 {
-    for (uint32_t i = 0; i < total_blocks; i++) {
+    // TODO: probably need to lock bitmap
+    for (uint32_t i = 0; i < total_blocks; ++i)
+    {
         if (!is_block_allocated(bitmap, i))
         {
             return i;
@@ -37,6 +42,7 @@ static inline int find_free_block(uint8_t *bitmap, uint32_t total_blocks)
 
 static inline void clear_blocks_allocated(uint8_t *bitmap, uint32_t block, uint32_t length)
 {
+    // TODO: probably need to lock bitmap
     for (uint32_t i = block; i <= length; ++i)
     {
         clear_block_allocated(bitmap, i);
@@ -63,7 +69,6 @@ static struct filetable_entry *portfs_find_free_file_entry(struct super_block *s
 static struct inode *portfs_get_inode_by_name(struct super_block *sb, const char *name)
 {
     struct portfs_superblock *psb = sb->s_fs_info;
-
 
     struct filetable_entry *file_entry = (struct filetable_entry *)psb->filetable;
     for (size_t i = 0; i < psb->max_file_count; ++i, ++file_entry)
@@ -156,7 +161,6 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 static int portfs_unlink(struct inode *dir, struct dentry *dentry)
 {
-
     if (!dentry->d_inode)
         return -ENOENT;
 
@@ -173,7 +177,7 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
     for (size_t i = 0; i < file_entry->extentCount; ++i)
     {
         clear_blocks_allocated(psb->block_bitmap,
-                               file_entry->extents[i].startBlock,
+                               file_entry->extents[i].start_block,
                                file_entry->extents[i].length);
     }
     memset(file_entry, 0, sizeof(struct filetable_entry));
@@ -193,7 +197,6 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
 static struct dentry *portfs_lookup(struct inode *dir, struct dentry *dentry,
                                     unsigned int flags)
 {
-
     if (!dentry || !dentry->d_name.name)
     {
         pr_err("portfs_lookup: NULL dentry or d_name.name\n");

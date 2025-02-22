@@ -11,20 +11,8 @@
 #include <linux/vmalloc.h>
 
 
-// Function prototypes
-static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
-                           struct dentry *dentry, umode_t mode, bool excl);
-static int portfs_unlink(struct inode *dir, struct dentry *dentry);
-
-static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx);
-
-static int portfs_fill_super(struct super_block *sb, void *data, int silent);
 static struct dentry *portfs_mount(struct file_system_type *fs_type,
                                    int flags, const char *dev_name, void *data);
-static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
-                         struct dentry *dentry, umode_t mode, bool excl);
-static int portfsfs_unlink(struct inode *dir, struct dentry *dentry);
-static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx);
 struct file* portfs_storage_init(char *path);
 
 static struct file_system_type portfs_type = {
@@ -35,5 +23,6 @@ static struct file_system_type portfs_type = {
     .fs_flags = FS_USERNS_MOUNT,
 };
 
+extern struct file* storage_filp;
 
 #endif // PORTFS_H

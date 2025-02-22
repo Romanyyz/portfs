@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-#include "../common/shared_structs.h"
+#include "shared_structs.h"
 
 class StorageManager
 {

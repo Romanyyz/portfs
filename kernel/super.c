@@ -1,17 +1,19 @@
 #include "portfs.h"
 #include "inode.h"
 #include "file.h"
-#include "../common/shared_structs.h"
+#include "shared_structs.h"
 
 #define PORTFS_MAGIC 0x506F5254
 #define MAX_STORAGE_PATH 256
 
 
 static char storage_path[MAX_STORAGE_PATH];
-static struct file* storage_filp = NULL;
+struct file* storage_filp;
 
 static void portfs_put_super(struct super_block *sb)
 {
+    pr_info("Killing superblock\n");
+
     struct portfs_superblock *msb = sb->s_fs_info;
     if (!msb)
         return;
@@ -24,12 +26,16 @@ static void portfs_put_super(struct super_block *sb)
     kfree(msb);
     sb->s_fs_info = NULL;
     generic_shutdown_super(sb);
+
+    if (storage_filp)
+        filp_close(storage_filp, NULL);
 }
 
 
 static void portfs_evict_inode(struct inode *inode)
 {
     pr_info("portfs_evict_inode: inode %lu\n", inode->i_ino);
+    pr_info("portfs_evict_inode: inode %lu, i_count=%d\n", inode->i_ino, atomic_read(&inode->i_count));
     inode->i_private = NULL;
     clear_inode(inode);
 }
@@ -61,6 +67,7 @@ static int portfs_fill_superblock(struct portfs_superblock *msb, const struct po
     msb->max_file_count = be32_to_cpu(dsb->max_file_count);
     msb->filetable = NULL;
     msb->block_bitmap = NULL;
+    msb->super = NULL;
     return 0;
 }
 
@@ -157,7 +164,7 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
         entry->ino         = be32_to_cpu(entry->ino);
         for (size_t i = 0; i < entry->extentCount; ++i)
         {
-            entry->extents[i].startBlock = be32_to_cpu(entry->extents[i].startBlock);
+            entry->extents[i].start_block = be32_to_cpu(entry->extents[i].start_block);
             entry->extents[i].length = be32_to_cpu(entry->extents[i].length);
         }
     }
@@ -227,6 +234,7 @@ static int portfs_init_fs_data(struct super_block *sb, void *data)
         return PTR_ERR(msb);
     }
     sb->s_fs_info = msb;
+    msb->super = sb;
 
     pr_info("portfs_init_fs_data: Initializing filetable\n");
     int err = 0;
@@ -315,8 +323,6 @@ static int __init portfs_init(void)
 static void __exit portfs_exit(void)
 {
     unregister_filesystem(&portfs_type);
-    if (storage_filp)
-        filp_close(storage_filp, NULL);
     pr_info("portfs unloaded.\n");
 }
 
