@@ -1,6 +1,7 @@
 #include "inode.h"
 
 #include "file.h"
+#include "linux/fs.h"
 #include "portfs.h"
 #include "shared_structs.h"
 #include "bitmap.h"
@@ -33,8 +34,8 @@ static struct inode *portfs_get_inode_by_name(struct super_block *sb, const char
             struct inode *inode = iget_locked(sb, file_entry->ino);
             if (!inode)
             {
-                pr_err("portfs_get_inode_by_name: Failed to allocate new inode\n");
-                return ERR_PTR(-ENOMEM);
+                pr_err("portfs_get_inode_by_name: Failed to get new inode\n");
+                return ERR_PTR(-ENOENT);
             }
             if (inode->i_state & I_NEW)
             {
@@ -53,6 +54,7 @@ static struct inode *portfs_get_inode_by_name(struct super_block *sb, const char
                 inode->i_fop = &portfs_file_operations;
                 inode->i_private = file_entry;
 
+                insert_inode_hash(inode);
                 unlock_new_inode(inode);
             }
             return inode;
@@ -78,7 +80,7 @@ static int portfs_create(struct mnt_idmap *idmap, struct inode *dir,
     if (dentry->d_inode)
         return -EEXIST;
 
-    inode = iget_locked(sb, iunique(sb, 2));
+    inode = iget_locked(sb, iunique(sb, 2)); // root inode is 1 so start from 2
     if (!inode)
         return -ENOMEM;
     if (inode->i_state & I_NEW)

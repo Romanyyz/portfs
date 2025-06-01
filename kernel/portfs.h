@@ -19,7 +19,7 @@ static struct file_system_type portfs_type = {
     .owner = THIS_MODULE,
     .name = "portfs",
     .mount = portfs_mount,
-    .kill_sb = kill_litter_super,
+    .kill_sb = generic_shutdown_super,
     .fs_flags = FS_USERNS_MOUNT,
 };
 

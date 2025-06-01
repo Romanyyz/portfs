@@ -287,6 +287,8 @@ static int portfs_fill_super(struct super_block *sb, void *data, int silent)
     root_inode->i_op = &portfs_dir_inode_operations;
     root_inode->i_fop = &portfs_dir_file_operations;
 
+    insert_inode_hash(root_inode);
+
     sb->s_root = d_make_root(root_inode);
     if (!sb->s_root) {
         pr_err("portfs_fill_super: Failed to make_root\n");
