@@ -1,5 +1,7 @@
 #include "file.h"
 
+#include "linux/types.h"
+
 #include "portfs.h"
 #include "bitmap.h"
 #include "shared_structs.h"
@@ -176,6 +178,39 @@ static ssize_t portfs_file_read(struct file *filp, char __user *buf, size_t coun
 }
 
 
+static loff_t portfs_get_append_physical_offset(struct filetable_entry *file_entry,
+                                                struct portfs_superblock *psb
+                                                /*size_t bytes_to_write,
+                                                int *err_code*/)
+{
+    int working_extent_idx = 0;
+    size_t bytes_in_last_block = file_entry->sizeInBytes % psb->block_size;
+    loff_t last_logical_block_index = file_entry->sizeInBytes / psb->block_size;
+    loff_t last_global_block_index = 0;
+    loff_t offset_in_target_extent;
+    while (working_extent_idx < file_entry->extentCount)
+    {
+        for (int j = 0; j < file_entry->extents[working_extent_idx].length; ++j)
+        {
+            if (last_global_block_index != last_logical_block_index)
+                ++last_global_block_index;
+            else
+            {
+                offset_in_target_extent = j;
+                break;
+            }
+        }
+        if (last_global_block_index == last_logical_block_index)
+            break;
+        ++working_extent_idx;
+    }
+    loff_t physical_offset = file_entry->extents[working_extent_idx].start_block * psb->block_size
+    + (offset_in_target_extent * psb->block_size) + bytes_in_last_block;
+    //*err_code = 0;
+    return physical_offset;
+}
+
+
 static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size_t count, loff_t *pos)
 {
     pr_info("portfs_file_write: Write to file. Pos = %lld", *pos);
@@ -195,6 +230,7 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
         *pos = file_entry->sizeInBytes;
     }
 
+
     if (file_entry->extentCount == 0)
     {
         pr_info("portfs_file_write: Allocating extent.");
@@ -204,7 +240,7 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
             pr_err("portfs_file_write: Could not allocate extent.");
             return err;
         }
-        file_entry->extentCount = 1;
+        ++file_entry->extentCount;
     }
 
     char* kbuf = NULL;
@@ -221,9 +257,9 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
         return -EFAULT;
     }
 
-    loff_t global_file_offset = file_entry->extents[0].start_block * psb->block_size + *pos;
-    pr_info("portfs_file_write: Write to file. global_file_offset = %lld", global_file_offset);
-    ssize_t bytes_written = kernel_write(storage_filp, kbuf, count, &global_file_offset);
+    loff_t phys_write_offset = portfs_get_append_physical_offset(file_entry, psb);
+    pr_info("portfs_file_write: Write to file. phys_write_offset = %lld", phys_write_offset);
+    ssize_t bytes_written = kernel_write(storage_filp, kbuf, count, &phys_write_offset);
 
     if (bytes_written > 0)
     {

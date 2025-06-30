@@ -22,7 +22,7 @@ static void portfs_put_super(struct super_block *sb)
         vfree(msb->filetable);
     if (msb->block_bitmap)
         kfree(msb->block_bitmap);
-    
+
     kfree(msb);
     sb->s_fs_info = NULL;
     generic_shutdown_super(sb);
@@ -41,9 +41,36 @@ static void portfs_evict_inode(struct inode *inode)
 }
 
 
+static int portfs_sync_superblock(struct super_block *sb)
+{}
+
+static int portfs_write_filetable(struct portfs_superblock *sb)
+{}
+
+static int portfs_write_block_bitmap(struct portfs_superblock *sb)
+{}
+
+static int portfs_sync_fs(struct super_block *sb, int wait)
+{
+    int err = 0;
+    err = portfs_sync_superblock(sb);
+
+    struct portfs_superblock *psb = sb->s_fs_info;
+    err = portfs_write_filetable(psb);
+
+    err = portfs_write_block_bitmap(psb);
+
+    if (storage_filp)
+        err = vfs_fsync(storage_filp, 0);
+
+    return 0;
+}
+
+
 static const struct super_operations portfs_super_ops = {
     .put_super = portfs_put_super,
     .evict_inode = portfs_evict_inode,
+    .sync_fs    = portfs_sync_fs,
 };
 
 
@@ -225,7 +252,7 @@ static int portfs_init_fs_data(struct super_block *sb, void *data)
         pr_err("portfs_init_fs_data: Error initializing storage\n");
         return PTR_ERR(storage_filp);
     }
-    
+
     pr_info("portfs_init_fs_data: Initializing superblock\n");
     struct portfs_superblock *msb = portfs_init_superblock();
     if (IS_ERR(msb))

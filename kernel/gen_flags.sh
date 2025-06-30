@@ -13,6 +13,7 @@ cat > compile_flags.txt <<EOF
 -I$KDIR/arch/x86/include/uapi
 -I$KDIR/include/generated/uapi
 -I$KDIR/arch/x86/include/generated/uapi
+-I../common
 -D__KERNEL__
 -DMODULE
 -std=gnu11
