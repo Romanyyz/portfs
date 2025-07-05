@@ -1,7 +1,6 @@
 #include "inode.h"
 
 #include "file.h"
-#include "linux/fs.h"
 #include "portfs.h"
 #include "shared_structs.h"
 #include "bitmap.h"
@@ -137,7 +136,7 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
                                file_entry->extents[i].start_block,
                                file_entry->extents[i].length);
     }
-    memset(file_entry, 0, sizeof(struct filetable_entry));
+    memset(file_entry, 0, sizeof(*file_entry));
 
     time64_t now = ktime_get_real_seconds();
     dir->i_ctime_sec = dir->i_mtime_sec = now;

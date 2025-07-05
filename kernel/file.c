@@ -50,6 +50,8 @@ static int allocate_extent(size_t bytes_to_allocate, struct portfs_superblock *p
 
     extent->start_block = (i - new_blocks_to_allocate) + 1;
     extent->length = new_blocks_to_allocate;
+    pr_info("portfs_allocate_blocks: Allocated blocks from %u to %u",
+            extent->start_block, extent->start_block + extent->length);
     return 0;
 }
 

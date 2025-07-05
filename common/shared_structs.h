@@ -29,14 +29,21 @@ struct portfs_disk_superblock {
     __be32 flags;
 } __attribute__((packed));
 
+struct disk_extent
+{
+    __be32 start_block;
+    __be32 length;
+}__attribute__((packed));
+
 struct disk_filetable_entry
 {
     char name[64];
-    __be64 startBlock;
-    __be64 sizeInBlocks;
-    __be64 sizeInBytes;
     __be64 ino;
-};
+    __be64 sizeInBytes;
+    __be16 extentCount;
+    struct disk_extent extents[MAX_EXTENTS];
+}__attribute__((packed));
+
 #endif // __KERNEL__
 
 #ifdef __cplusplus

@@ -104,8 +104,8 @@ int StorageManager::writeSuperblock(const portfs_superblock& msb)
     dsb.data_start         = htobe32(msb.data_start);
     dsb.max_file_count     = htobe32(msb.max_file_count);
     dsb.checksum           = htobe32(msb.checksum);
-    dsb.last_mount_time    = htobe32(msb.last_mount_time);
-    dsb.last_write_time    = htobe32(msb.last_write_time);
+    dsb.last_mount_time    = htobe64(msb.last_mount_time);
+    dsb.last_write_time    = htobe64(msb.last_write_time);
     dsb.flags              = htobe32(msb.flags);
 
     std::ofstream file(storageFilePath_, std::ios::binary | std::ios::out | std::ios::in);
@@ -229,4 +229,3 @@ int StorageManager::mountPortfs(const std::filesystem::path& mountDirPath,
     std::cout << "\nPortFS mounted successfully!" << std::endl;
     return 0;
 }
-
