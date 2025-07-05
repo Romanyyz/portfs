@@ -185,6 +185,8 @@ static int portfs_getattr(struct mnt_idmap *idmap,
                           const struct path *path, struct kstat *stat,
                           u32 request_mask, unsigned int flags)
 {
+    struct inode *inode = d_inode(path->dentry);
+    generic_fillattr(idmap, request_mask, inode, stat);
     return 0;
 }
 
