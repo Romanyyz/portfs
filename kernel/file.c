@@ -97,17 +97,8 @@ static int portfs_file_open(struct inode *inode, struct file *filp)
     int err = inode_permission(file_mnt_idmap(filp), inode, MAY_READ | MAY_WRITE);
     if (err)
     {
-        pr_err("portfs_file_open: Error opening file: %s", filp->f_path.dentry->d_name.name);
+        pr_err("portfs_file_open: Error opening file, invalid permissions: %s", filp->f_path.dentry->d_name.name);
         return err;
-    }
-
-    struct filetable_entry *file_entry = inode->i_private;
-    if (filp->f_flags & O_TRUNC)
-    {
-        pr_info("portfs_file_open: truncating file to zero length.");
-        file_entry->sizeInBytes = 0;
-        inode->i_size = 0;
-        mark_inode_dirty(inode);
     }
 
     pr_info("portfs_file_open: File successfuly opened: %s", filp->f_path.dentry->d_name.name);

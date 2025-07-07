@@ -5,6 +5,15 @@
 #include "shared_structs.h"
 #include "bitmap.h"
 
+
+static void portfs_free_extent(struct portfs_superblock *psb, struct extent *extent)
+{
+    uint8_t *block_bitmap = psb->block_bitmap;
+    clear_blocks_allocated(block_bitmap, extent->start_block, extent->length);
+    extent->start_block = 0;
+    extent->length = 0;
+}
+
 static struct filetable_entry *portfs_find_free_file_entry(struct super_block *sb)
 {
     struct portfs_superblock *psb = sb->s_fs_info;
@@ -191,6 +200,103 @@ static int portfs_getattr(struct mnt_idmap *idmap,
 }
 
 
+static int portfs_truncate(struct inode *inode, loff_t new_size)
+{
+    pr_info("portfs_truncate: Beginning");
+    struct filetable_entry *filetable_entry = inode->i_private;
+    struct portfs_superblock *psb = inode->i_sb->s_fs_info;
+    if (new_size == 0) {
+        for (int i = 0; i < filetable_entry->extentCount; ++i)
+            portfs_free_extent(psb, &filetable_entry->extents[i]);
+
+        filetable_entry->extentCount = 0;
+        filetable_entry->sizeInBytes = 0;
+        inode->i_size = 0;
+
+        pr_info("portfs_truncate: Truncated to 0");
+
+        return 0;
+    }
+
+    loff_t old_blocks = (filetable_entry->sizeInBytes + psb->block_size - 1) / psb->block_size;
+    loff_t new_blocks = (new_size + psb->block_size - 1) / psb->block_size;
+    loff_t blocks_to_remove = old_blocks - new_blocks;
+    if (blocks_to_remove == 0)
+        return 0;
+
+    for (int i = filetable_entry->extentCount - 1; i >= 0; ++i)
+    {
+        if (blocks_to_remove >= filetable_entry->extents[i].length)
+        {
+            blocks_to_remove -= filetable_entry->extents[i].length;
+            portfs_free_extent(psb, &filetable_entry->extents[i]);
+            filetable_entry->extentCount--;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    filetable_entry->sizeInBytes = new_size;
+    inode->i_size = new_size;
+    if (blocks_to_remove != 0)
+    {
+        pr_warn("portfs_truncate: Failed to free %lld blocks", blocks_to_remove);
+        return -EIO;
+    }
+
+    return 0;
+}
+
+static int portfs_extend(struct inode *inode, loff_t new_size)
+{
+    return 0;
+}
+
+
+static int portfs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+                          struct iattr *attr)
+{
+    pr_info("portfs_setattr: Beginning");
+    struct inode *inode = d_inode(dentry);
+    int err;
+    pr_info("portfs_setattr: 1");
+
+    err = setattr_prepare(idmap, dentry, attr);
+    pr_info("portfs_setattr: 2");
+    if (err)
+        return err;
+
+    pr_info("portfs_setattr: 3");
+    if (attr->ia_valid & ATTR_SIZE)
+    {
+        pr_info("portfs_setattr: 4");
+        loff_t new_size = attr->ia_size;
+        pr_info("portfs_setattr: old_size = %lld, new_size = %lld", inode->i_size, new_size);
+        if (new_size < inode->i_size)
+        {
+            pr_info("portfs_setattr: 5");
+            err = portfs_truncate(inode, new_size);
+            if (err)
+                return err;
+        }
+        else if (new_size > inode->i_size)
+        {
+            pr_info("portfs_setattr: 6");
+            err = portfs_extend(inode, new_size);
+            if (err)
+                return err;
+        }
+    }
+    setattr_copy(idmap, inode, attr);
+    mark_inode_dirty(inode);
+
+    pr_info("portfs_setattr: 7");
+    return 0;
+}
+
+
 const struct inode_operations portfs_dir_inode_operations = {
     .create         = portfs_create,
     .unlink         = portfs_unlink,
@@ -199,4 +305,5 @@ const struct inode_operations portfs_dir_inode_operations = {
 
 const struct inode_operations portfs_file_inode_operations = {
     .getattr = portfs_getattr,
+    .setattr = portfs_setattr,
 };
