@@ -69,7 +69,7 @@ portfs_superblock StorageManager::createSuperblock()
     msb.filetable_start = 1;
 
     uint32_t maxFilesCount       = storageFileSizeInBytes_ / averageFileSize_;
-    uint32_t filetableSizeBytes  = maxFilesCount * sizeof(filetable_entry);
+    uint32_t filetableSizeBytes  = maxFilesCount * sizeof(disk_filetable_entry);
     uint32_t filetableSizeBlocks = filetableSizeBytes / msb.block_size;
 
     msb.filetable_size     = filetableSizeBlocks;
@@ -142,33 +142,33 @@ int StorageManager::writeFileTable(const portfs_superblock& msb)
     }
 
     constexpr size_t BUFFER_SIZE{1 * 1024 * 1024}; // 1MB
-    filetable_entry entry{};
-    entry.name[0] = '\0';
-    entry.sizeInBytes = 0;
-    entry.extentCount = 0;
-    entry.ino = 0;
-    for (size_t i = 0; i < MAX_EXTENTS; ++i)
+    disk_filetable_entry file_entry{};
+    file_entry.name[0] = '\0';
+    file_entry.size_in_bytes = 0;
+    file_entry.extent_count = 0;
+    file_entry.ino = 0;
+    for (size_t i = 0; i < DIRECT_EXTENTS; ++i)
     {
-        entry.extents[i] = {0,0};
+        file_entry.direct_extents[i] = {0,0};
     }
 
-    std::vector<filetable_entry> buffer;
-    buffer.reserve(BUFFER_SIZE / sizeof(filetable_entry));
+    std::vector<disk_filetable_entry> buffer;
+    buffer.reserve(BUFFER_SIZE / sizeof(file_entry));
 
     for (size_t i = 0; i < msb.max_file_count; ++i)
     {
-        buffer.push_back(entry);
+        buffer.push_back(file_entry);
 
-        if (buffer.size() * sizeof(filetable_entry) >= BUFFER_SIZE)
+        if (buffer.size() * sizeof(file_entry) >= BUFFER_SIZE)
         {
-            file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(filetable_entry));
+            file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(file_entry));
             buffer.clear();
         }
     }
 
     if (!buffer.empty())
     {
-        file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(filetable_entry));
+        file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(file_entry));
     }
 
     std::cout << "\nFiletable written successfully.";
