@@ -1,5 +1,5 @@
 obj-m += portfs.o
-portfs-objs := super.o inode.o file.o storage.o
+portfs-objs := super.o inode.o file.o storage.o extent_tree.o extent_alloc.o
 
 PWD := $(CURDIR)
 PROJECT_ROOT := $(abspath ..)
