@@ -17,6 +17,16 @@ static inline void set_block_allocated(uint8_t *bitmap, uint32_t block)
 }
 
 
+static inline void set_blocks_allocated(uint8_t *bitmap, uint32_t start_block, uint32_t length)
+{
+    // TODO: probably need to lock bitmap
+    for (uint32_t i = start_block; i <= length; ++i)
+    {
+        set_block_allocated(bitmap, i);
+    }
+}
+
+
 static inline void clear_block_allocated(uint8_t *bitmap, uint32_t block)
 {
     // TODO: probably need to lock bitmap
@@ -38,10 +48,10 @@ static inline int find_free_block(uint8_t *bitmap, uint32_t total_blocks)
 }
 
 
-static inline void clear_blocks_allocated(uint8_t *bitmap, uint32_t block, uint32_t length)
+static inline void clear_blocks_allocated(uint8_t *bitmap, uint32_t start_block, uint32_t length)
 {
     // TODO: probably need to lock bitmap
-    for (uint32_t i = block; i <= length; ++i)
+    for (uint32_t i = start_block; i <= length; ++i)
     {
         clear_block_allocated(bitmap, i);
     }
