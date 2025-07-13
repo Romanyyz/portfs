@@ -107,13 +107,14 @@ static int portfs_write_filetable(struct portfs_superblock *psb)
 
             memcpy(dst_entry->name, src_entry->name, sizeof(dst_entry->name));
             dst_entry->ino = cpu_to_be64(src_entry->ino);
-            dst_entry->sizeInBytes = cpu_to_be64(src_entry->sizeInBytes);
-            dst_entry->extentCount = cpu_to_be16(src_entry->extentCount);
+            dst_entry->size_in_bytes = cpu_to_be64(src_entry->size_in_bytes);
+            dst_entry->extent_count = cpu_to_be16(src_entry->extent_count);
+            dst_entry->extents_block = cpu_to_be32(src_entry->extents_block);
 
-            for (int k = 0; k < src_entry->extentCount; ++k)
+            for (int k = 0; k < src_entry->extent_count; ++k)
             {
-                dst_entry->extents[k].start_block = cpu_to_be32(src_entry->extents[k].start_block);
-                dst_entry->extents[k].length = cpu_to_be32(src_entry->extents[k].length);
+                dst_entry->direct_extents[k].start_block = cpu_to_be32(src_entry->direct_extents[k].start_block);
+                dst_entry->direct_extents[k].length = cpu_to_be32(src_entry->direct_extents[k].length);
             }
         }
         size_t curr_size = curr_entries * sizeof(*disk_entries_buf);
@@ -304,22 +305,30 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
         return -EINVAL;
     }
 
-    loff_t offset = msb->filetable_start * msb->block_size;
     size_t total_size = msb->filetable_size * msb->block_size;
-
-    msb->filetable = vmalloc(total_size);
-    if (!(msb->filetable))
+    struct disk_filetable_entry *disk_file_entry_array = vmalloc(total_size);
+    if (!disk_file_entry_array)
     {
         pr_err("portfs_init_filetable: Could not allocate memory, size is %zu\n", total_size);
         return -ENOMEM;
     }
 
+    msb->filetable = vmalloc(sizeof(*(msb->filetable)) * msb->max_file_count);
+    if (!(msb->filetable))
+    {
+        pr_err("portfs_init_filetable: Could not allocate memory, size is %zu\n", total_size);
+        vfree(disk_file_entry_array);
+        return -ENOMEM;
+    }
+
+    loff_t offset = msb->filetable_start * msb->block_size;
     ssize_t bytes_read = 0;
-    bytes_read = kernel_read(storage_filp, msb->filetable, total_size, &offset);
+    bytes_read = kernel_read(storage_filp, disk_file_entry_array, total_size, &offset);
     if (bytes_read < 0)
     {
         pr_err("portfs_init_filetable: Failed to read filetable: %zd\n", bytes_read);
-        kfree(msb->filetable);
+        vfree(msb->filetable);
+        vfree(disk_file_entry_array);
         msb->filetable = NULL;
         return bytes_read;
     }
@@ -327,24 +336,31 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
     {
         pr_err("portfs_init_filetable: Incomplete read of filetable: expected %zu, got %zd\n",
                total_size, bytes_read);
-        kfree(msb->filetable);
+        vfree(msb->filetable);
+        vfree(disk_file_entry_array);
         msb->filetable = NULL;
         return -EIO;
     }
 
     for (int i = 0; i < msb->max_file_count; ++i)
     {
+        struct disk_filetable_entry *disk_file_entry = &disk_file_entry_array[i];
         struct filetable_entry *entry = &msb->filetable[i];
 
-        entry->sizeInBytes = be64_to_cpu(entry->sizeInBytes);
-        entry->extentCount = be16_to_cpu(entry->extentCount);
-        entry->ino         = be64_to_cpu(entry->ino);
-        for (size_t i = 0; i < entry->extentCount; ++i)
+        memcpy(entry->name, disk_file_entry->name, sizeof(disk_file_entry->name));
+        entry->size_in_bytes = be64_to_cpu(disk_file_entry->size_in_bytes);
+        entry->extent_count = be16_to_cpu(disk_file_entry->extent_count);
+        entry->extents_block = be32_to_cpu(disk_file_entry->extents_block);
+        entry->ino         = be64_to_cpu(disk_file_entry->ino);
+        for (size_t i = 0; i < disk_file_entry->extent_count; ++i)
         {
-            entry->extents[i].start_block = be32_to_cpu(entry->extents[i].start_block);
-            entry->extents[i].length = be32_to_cpu(entry->extents[i].length);
+            entry->direct_extents[i].start_block = be32_to_cpu(disk_file_entry->direct_extents[i].start_block);
+            entry->direct_extents[i].length = be32_to_cpu(disk_file_entry->direct_extents[i].length);
         }
+        entry->indirect_extents = NULL;
     }
+
+    vfree(disk_file_entry_array);
     pr_info("portfs_init_filetable: Filetable read successfully\n");
     return 0;
 }

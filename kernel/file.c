@@ -4,57 +4,9 @@
 
 #include "portfs.h"
 #include "bitmap.h"
+#include "extent_tree.h"
+#include "extent_alloc.h"
 #include "shared_structs.h"
-
-#define BLOCK_ALLOC_SCALE 1000
-#define BLOCK_ALLOC_MULTIPLIER 1500
-
-static int allocate_extent(size_t bytes_to_allocate, struct portfs_superblock *psb, struct extent *extent)
-{
-    pr_info("allocate_extent: bytes_to_allocate = %zu", bytes_to_allocate);
-    if (!extent || bytes_to_allocate < 0)
-        return -EINVAL;
-
-    size_t blocks_to_allocate = (bytes_to_allocate + psb->block_size - 1) / psb->block_size;
-    const size_t new_blocks_to_allocate = (blocks_to_allocate * BLOCK_ALLOC_MULTIPLIER) / BLOCK_ALLOC_SCALE;
-
-    // TODO: probably need to lock bitmap
-    size_t curr_block_count = 0;
-    uint32_t i = psb->data_start;
-    const uint32_t total_blocks = psb->total_blocks;
-    uint8_t *block_bitmap = psb->block_bitmap;
-    for (; i < total_blocks; ++i)
-    {
-        if (!is_block_allocated(block_bitmap, i))
-        {
-            ++curr_block_count;
-            if (curr_block_count == new_blocks_to_allocate)
-            {
-                break;
-            }
-        }
-        else
-        {
-            curr_block_count = 0;
-        }
-    }
-
-    if (curr_block_count != new_blocks_to_allocate)
-        return -ENOMEM;
-
-    size_t block_to_allocate = i - new_blocks_to_allocate;
-    for (size_t j = 0; j < new_blocks_to_allocate; ++j)
-    {
-        set_block_allocated(block_bitmap, ++block_to_allocate);
-    }
-
-    extent->start_block = (i - new_blocks_to_allocate) + 1;
-    extent->length = new_blocks_to_allocate;
-    pr_info("portfs_allocate_blocks: Allocated blocks from %u to %u",
-            extent->start_block, extent->start_block + extent->length);
-    return 0;
-}
-
 
 static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx)
 {
@@ -126,17 +78,17 @@ static ssize_t portfs_file_read(struct file *filp, char __user *buf, size_t coun
     struct portfs_superblock *psb = inode->i_sb->s_fs_info;
     struct filetable_entry *file_entry = inode->i_private;
 
-    if (*pos >= file_entry->sizeInBytes)
+    if (*pos >= file_entry->size_in_bytes)
         return 0;
-    if (*pos + count > file_entry->sizeInBytes)
-        count = file_entry->sizeInBytes - *pos;
+    if (*pos + count > file_entry->size_in_bytes)
+        count = file_entry->size_in_bytes - *pos;
 
     loff_t global_file_offset = psb->data_start;
     size_t current_size_extent_bytes = 0;
-    for (size_t i = 0; i < file_entry->extentCount; ++i)
+    for (size_t i = 0; i < file_entry->extent_count; ++i)
     {
-        const size_t start_extent_bytes = file_entry->extents[i].start_block * psb->block_size;
-        const size_t end_extent_bytes = (file_entry->extents[i].start_block + file_entry->extents[i].length) * psb->block_size;
+        const size_t start_extent_bytes = file_entry->direct_extents[i].start_block * psb->block_size;
+        const size_t end_extent_bytes = (file_entry->direct_extents[i].start_block + file_entry->direct_extents[i].length) * psb->block_size;
         const size_t next_size_extent_bytes = end_extent_bytes - start_extent_bytes;
         current_size_extent_bytes += next_size_extent_bytes;
         if (*pos < current_size_extent_bytes)
@@ -171,37 +123,57 @@ static ssize_t portfs_file_read(struct file *filp, char __user *buf, size_t coun
 }
 
 
-static loff_t portfs_get_append_physical_offset(struct filetable_entry *file_entry,
-                                                struct portfs_superblock *psb
-                                                /*size_t bytes_to_write,
-                                                int *err_code*/)
+static loff_t portfs_calc_global_offset(const struct portfs_superblock *psb,
+                                        const struct filetable_entry *entry,
+                                        loff_t local_offset)
 {
-    int working_extent_idx = 0;
-    size_t bytes_in_last_block = file_entry->sizeInBytes % psb->block_size;
-    loff_t last_logical_block_index = file_entry->sizeInBytes / psb->block_size;
-    loff_t last_global_block_index = 0;
-    loff_t offset_in_target_extent;
-    while (working_extent_idx < file_entry->extentCount)
+    loff_t global_offset = 0;
+
+    for (size_t i = 0; i < entry->extent_count; ++i)
     {
-        for (int j = 0; j < file_entry->extents[working_extent_idx].length; ++j)
+        const struct extent *ext;
+        if (i < DIRECT_EXTENTS)
+            ext = &entry->direct_extents[i];
+        else
+            ext = &entry->indirect_extents[i - DIRECT_EXTENTS];
+
+        global_offset += ext->length * psb->block_size;
+        if (global_offset > local_offset)
         {
-            if (last_global_block_index != last_logical_block_index)
-                ++last_global_block_index;
-            else
-            {
-                offset_in_target_extent = j;
-                break;
-            }
+            loff_t remaining = global_offset - local_offset;
+            loff_t ext_offset = ext->length * psb->block_size - remaining;
+            return ext->start_block * psb->block_size + ext_offset;
         }
-        if (last_global_block_index == last_logical_block_index)
-            break;
-        ++working_extent_idx;
     }
-    loff_t physical_offset = file_entry->extents[working_extent_idx].start_block * psb->block_size
-    + (offset_in_target_extent * psb->block_size) + bytes_in_last_block;
-    //*err_code = 0;
-    return physical_offset;
+
+    return -EFAULT;
 }
+
+static ssize_t portfs_calc_available_bytes(const struct portfs_superblock *psb,
+                                           const struct filetable_entry *entry,
+                                           loff_t local_offset)
+{
+    size_t global_offset = 0;
+
+    for (size_t i = 0; i < entry->extent_count; ++i)
+    {
+        const struct extent *ext;
+        if (i < DIRECT_EXTENTS)
+            ext = &entry->direct_extents[i];
+        else
+            ext = &entry->indirect_extents[i - DIRECT_EXTENTS];
+
+        global_offset += ext->length * psb->block_size;
+        if (global_offset > local_offset)
+        {
+            size_t remaining = global_offset - local_offset;
+            return remaining;
+        }
+    }
+
+    return -EFAULT;
+}
+
 
 
 static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size_t count, loff_t *pos)
@@ -220,24 +192,21 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
 
     if (filp->f_flags & O_APPEND)
     {
-        *pos = file_entry->sizeInBytes;
+        *pos = file_entry->size_in_bytes;
     }
 
-
-    if (file_entry->extentCount == 0)
+    const size_t available_size = portfs_get_allocated_size(file_entry, psb->block_size) - file_entry->size_in_bytes;
+    if (available_size < count)
     {
-        pr_info("portfs_file_write: Allocating extent.");
-        int err = allocate_extent(count, psb, &(file_entry->extents[0]));
+        int err = portfs_allocate_memory(psb, file_entry, count - available_size);
         if (err)
         {
-            pr_err("portfs_file_write: Could not allocate extent.");
+            pr_err("portfs_file_write: Could not allocate memory");
             return err;
         }
-        ++file_entry->extentCount;
     }
 
-    char* kbuf = NULL;
-    kbuf = kmalloc(count, GFP_KERNEL);
+    char* kbuf = kmalloc(count, GFP_KERNEL);
     if (!kbuf)
     {
         pr_err("portfs_file_read: Could not allocate memory");
@@ -250,25 +219,49 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
         return -EFAULT;
     }
 
-    loff_t phys_write_offset = portfs_get_append_physical_offset(file_entry, psb);
-    pr_info("portfs_file_write: Write to file. phys_write_offset = %lld", phys_write_offset);
-    ssize_t bytes_written = kernel_write(storage_filp, kbuf, count, &phys_write_offset);
-
-    if (bytes_written > 0)
+    size_t bytes_written_total = 0;
+    while (count > 0)
     {
-        *pos += bytes_written;
-        if (*pos > file_entry->sizeInBytes)
+        loff_t global_offset = portfs_calc_global_offset(psb, file_entry, *pos);
+        size_t available_bytes = portfs_calc_available_bytes(psb, file_entry, *pos);
+        size_t bytes_to_write = min(available_bytes, count);
+
+        pr_info("portfs_file_write: Write to file. phys_write_offset = %lld, bytes = %ld",
+                global_offset, bytes_to_write);
+        ssize_t bytes_written = kernel_write(storage_filp,
+                                             kbuf + bytes_written_total,
+                                             bytes_to_write,
+                                             &global_offset);
+        if (bytes_written != bytes_to_write)
         {
-            file_entry->sizeInBytes = *pos;
+            break;
+        }
+
+        count -= bytes_written;
+        *pos += bytes_written;
+        bytes_written_total += bytes_written;
+    }
+
+    if (count == 0)
+    {
+        if (*pos > file_entry->size_in_bytes)
+        {
+            file_entry->size_in_bytes = *pos;
             inode->i_size = *pos;
             mark_inode_dirty(inode);
         }
+    }
+    else
+    {
+        pr_err("portfs_file_write: Failed to write all bytes");
+        kfree(kbuf);
+        return -EIO;
     }
 
     pr_info("portfs_file_write: Write to file finished. New Pos = %lld", *pos);
     kfree(kbuf);
 
-    return bytes_written;
+    return bytes_written_total;
 }
 
 

@@ -4,7 +4,7 @@
 #include "portfs.h"
 #include "shared_structs.h"
 #include "bitmap.h"
-
+#include "extent_alloc.h"
 
 static void portfs_free_extent(struct portfs_superblock *psb, struct extent *extent)
 {
@@ -13,6 +13,7 @@ static void portfs_free_extent(struct portfs_superblock *psb, struct extent *ext
     extent->start_block = 0;
     extent->length = 0;
 }
+
 
 static struct filetable_entry *portfs_find_free_file_entry(struct super_block *sb)
 {
@@ -50,7 +51,7 @@ static struct inode *portfs_get_inode_by_name(struct super_block *sb, const char
                 inode->i_mode = S_IFREG | 0644; // -rw-r--r--
                 inode->i_uid = current_fsuid();
                 inode->i_gid = current_fsgid();
-                inode->i_size = file_entry->sizeInBytes;
+                inode->i_size = file_entry->size_in_bytes;
                 inode->i_sb = sb;
 
                 time64_t now = ktime_get_real_seconds();
@@ -139,11 +140,11 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
     if (!file_entry)
         return -EINVAL;
 
-    for (size_t i = 0; i < file_entry->extentCount; ++i)
+    for (size_t i = 0; i < file_entry->extent_count; ++i)
     {
         clear_blocks_allocated(psb->block_bitmap,
-                               file_entry->extents[i].start_block,
-                               file_entry->extents[i].length);
+                               file_entry->direct_extents[i].start_block,
+                               file_entry->direct_extents[i].length);
     }
     memset(file_entry, 0, sizeof(*file_entry));
 
@@ -203,14 +204,14 @@ static int portfs_getattr(struct mnt_idmap *idmap,
 static int portfs_truncate(struct inode *inode, loff_t new_size)
 {
     pr_info("portfs_truncate: Beginning");
-    struct filetable_entry *filetable_entry = inode->i_private;
+    struct filetable_entry *file_entry = inode->i_private;
     struct portfs_superblock *psb = inode->i_sb->s_fs_info;
     if (new_size == 0) {
-        for (int i = 0; i < filetable_entry->extentCount; ++i)
-            portfs_free_extent(psb, &filetable_entry->extents[i]);
+        for (int i = 0; i < file_entry->extent_count; ++i)
+            portfs_free_extent(psb, &file_entry->direct_extents[i]);
 
-        filetable_entry->extentCount = 0;
-        filetable_entry->sizeInBytes = 0;
+        file_entry->extent_count = 0;
+        file_entry->size_in_bytes = 0;
         inode->i_size = 0;
 
         pr_info("portfs_truncate: Truncated to 0");
@@ -218,19 +219,19 @@ static int portfs_truncate(struct inode *inode, loff_t new_size)
         return 0;
     }
 
-    loff_t old_blocks = (filetable_entry->sizeInBytes + psb->block_size - 1) / psb->block_size;
+    loff_t old_blocks = (file_entry->size_in_bytes + psb->block_size - 1) / psb->block_size;
     loff_t new_blocks = (new_size + psb->block_size - 1) / psb->block_size;
     loff_t blocks_to_remove = old_blocks - new_blocks;
     if (blocks_to_remove == 0)
         return 0;
 
-    for (int i = filetable_entry->extentCount - 1; i >= 0; ++i)
+    for (int i = file_entry->extent_count - 1; i >= 0; ++i)
     {
-        if (blocks_to_remove >= filetable_entry->extents[i].length)
+        if (blocks_to_remove >= file_entry->direct_extents[i].length)
         {
-            blocks_to_remove -= filetable_entry->extents[i].length;
-            portfs_free_extent(psb, &filetable_entry->extents[i]);
-            filetable_entry->extentCount--;
+            blocks_to_remove -= file_entry->direct_extents[i].length;
+            portfs_free_extent(psb, &file_entry->direct_extents[i]);
+            file_entry->extent_count--;
         }
         else
         {
@@ -238,7 +239,7 @@ static int portfs_truncate(struct inode *inode, loff_t new_size)
         }
     }
 
-    filetable_entry->sizeInBytes = new_size;
+    file_entry->size_in_bytes = new_size;
     inode->i_size = new_size;
     if (blocks_to_remove != 0)
     {
@@ -251,6 +252,29 @@ static int portfs_truncate(struct inode *inode, loff_t new_size)
 
 static int portfs_extend(struct inode *inode, loff_t new_size)
 {
+    pr_info("portfs_extend: Beginning");
+    struct filetable_entry *file_entry = inode->i_private;
+    struct portfs_superblock *psb = inode->i_sb->s_fs_info;
+    size_t needed_size = new_size - file_entry->size_in_bytes;
+    const size_t available_size = portfs_get_allocated_size(file_entry, psb->block_size)
+                                    - file_entry->size_in_bytes;
+
+    if (available_size >= needed_size)
+    {
+        inode->i_size = new_size;
+        file_entry->size_in_bytes = new_size;
+        return 0;
+    }
+
+    int err = portfs_allocate_memory(psb, file_entry, needed_size);
+    if (err)
+    {
+        pr_err("portfs_extend: Failed to allocate %ld bytes", needed_size);
+        return err;
+    }
+
+    inode->i_size = new_size;
+    file_entry->size_in_bytes = new_size;
     return 0;
 }
 
@@ -261,29 +285,23 @@ static int portfs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
     pr_info("portfs_setattr: Beginning");
     struct inode *inode = d_inode(dentry);
     int err;
-    pr_info("portfs_setattr: 1");
 
     err = setattr_prepare(idmap, dentry, attr);
-    pr_info("portfs_setattr: 2");
     if (err)
         return err;
 
-    pr_info("portfs_setattr: 3");
     if (attr->ia_valid & ATTR_SIZE)
     {
-        pr_info("portfs_setattr: 4");
         loff_t new_size = attr->ia_size;
         pr_info("portfs_setattr: old_size = %lld, new_size = %lld", inode->i_size, new_size);
         if (new_size < inode->i_size)
         {
-            pr_info("portfs_setattr: 5");
             err = portfs_truncate(inode, new_size);
             if (err)
                 return err;
         }
         else if (new_size > inode->i_size)
         {
-            pr_info("portfs_setattr: 6");
             err = portfs_extend(inode, new_size);
             if (err)
                 return err;
@@ -292,7 +310,7 @@ static int portfs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
     setattr_copy(idmap, inode, attr);
     mark_inode_dirty(inode);
 
-    pr_info("portfs_setattr: 7");
+    pr_info("portfs_setattr: Exiting");
     return 0;
 }
 
