@@ -62,6 +62,13 @@ static int portfs_release_file(struct inode *inode, struct file *filp)
 {
     pr_info("portfs_release_file: Closing file.");
     pr_info("portfs_release_file: inode %lu, i_count=%d\n", inode->i_ino, atomic_read(&inode->i_count));
+    struct filetable_entry *file_entry = inode->i_private;
+    if (file_entry && file_entry->indirect_extents)
+    {
+        kfree(file_entry->indirect_extents);
+        file_entry->indirect_extents = NULL;
+    }
+
     return 0;
 }
 

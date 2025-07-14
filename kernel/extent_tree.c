@@ -18,9 +18,12 @@ int portfs_build_extent_tree(struct portfs_superblock *psb,
 
     for (int i = psb->data_start; i < total_blocks; ++i)
     {
-        if (!is_block_allocated(psb->block_bitmap, i) && length < MAX_EXTENT_LENGTH) {
+        if (!is_block_allocated(psb->block_bitmap, i) && length < MAX_EXTENT_LENGTH)
+        {
             length++;
-        } else {
+        }
+        else
+        {
             if (length > 0) {
                 struct free_extent *free_ext = kmalloc(sizeof(*free_ext), GFP_KERNEL);
                 if (!free_ext)
@@ -33,7 +36,8 @@ int portfs_build_extent_tree(struct portfs_superblock *psb,
             }
         }
     }
-    if (length > 0) {
+    if (length > 0)
+    {
         struct free_extent *free_ext = kmalloc(sizeof(*free_ext), GFP_KERNEL);
         if (!free_ext)
             return -ENOMEM;

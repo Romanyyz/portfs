@@ -14,16 +14,26 @@ static void portfs_put_super(struct super_block *sb)
 {
     pr_info("Killing superblock\n");
 
-    struct portfs_superblock *msb = sb->s_fs_info;
-    if (!msb)
+    struct portfs_superblock *psb = sb->s_fs_info;
+    if (!psb)
         return;
 
-    if (msb->filetable)
-        vfree(msb->filetable);
-    if (msb->block_bitmap)
-        kfree(msb->block_bitmap);
+    if (psb->filetable)
+    {
+        for (int i = 0; i < psb->max_file_count; ++i)
+        {
+            if (psb->filetable[i].indirect_extents)
+            {
+                kfree(psb->filetable[i].indirect_extents);
+            }
+        }
+        vfree(psb->filetable);
+    }
 
-    kfree(msb);
+    if (psb->block_bitmap)
+        kfree(psb->block_bitmap);
+
+    kfree(psb);
     sb->s_fs_info = NULL;
     generic_shutdown_super(sb);
 
