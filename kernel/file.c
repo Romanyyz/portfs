@@ -134,7 +134,10 @@ static loff_t portfs_calc_global_offset(const struct portfs_superblock *psb,
                                         const struct filetable_entry *entry,
                                         loff_t local_offset)
 {
+    pr_info("portfs_calc_global_offset: Local offset = %lld", local_offset);
+
     loff_t global_offset = 0;
+    loff_t offset_remaining = local_offset;
 
     for (size_t i = 0; i < entry->extent_count; ++i)
     {
@@ -144,13 +147,17 @@ static loff_t portfs_calc_global_offset(const struct portfs_superblock *psb,
         else
             ext = &entry->indirect_extents[i - DIRECT_EXTENTS];
 
-        global_offset += ext->length * psb->block_size;
-        if (global_offset > local_offset)
+        loff_t ext_size = ext->length * psb->block_size;
+
+        if (offset_remaining < ext_size)
         {
-            loff_t remaining = global_offset - local_offset;
-            loff_t ext_offset = ext->length * psb->block_size - remaining;
-            return ext->start_block * psb->block_size + ext_offset;
+            pr_info("portfs_calc_global_offset: Using block %u", ext->start_block);
+            loff_t ret = ext->start_block * psb->block_size + offset_remaining;
+            pr_info("portfs_calc_global_offset: Calculated global offset = %lld", ret);
+            return ret;
         }
+
+        offset_remaining -= ext_size;
     }
 
     return -EFAULT;
@@ -182,7 +189,6 @@ static ssize_t portfs_calc_available_bytes(const struct portfs_superblock *psb,
 }
 
 
-
 static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size_t count, loff_t *pos)
 {
     pr_info("portfs_file_write: Write to file. Pos = %lld", *pos);
@@ -202,7 +208,8 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
         *pos = file_entry->size_in_bytes;
     }
 
-    const size_t available_size = portfs_get_allocated_size(file_entry, psb->block_size) - file_entry->size_in_bytes;
+    const size_t available_size = portfs_get_allocated_size(file_entry, psb->block_size)
+                                    - file_entry->size_in_bytes;
     if (available_size < count)
     {
         int err = portfs_allocate_memory(psb, file_entry, count - available_size);
@@ -230,11 +237,22 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
     while (count > 0)
     {
         loff_t global_offset = portfs_calc_global_offset(psb, file_entry, *pos);
+        if (global_offset < psb->data_start * psb->block_size)
+        {
+            pr_err("portfs_file_write: Invalid offset, offset = %llu", global_offset);
+            break;
+        }
         size_t available_bytes = portfs_calc_available_bytes(psb, file_entry, *pos);
+        if (available_bytes <= 0)
+        {
+            pr_warn("portfs_file_write: No available bytes");
+            break;
+        }
         size_t bytes_to_write = min(available_bytes, count);
 
-        pr_info("portfs_file_write: Write to file. phys_write_offset = %lld, bytes = %ld",
-                global_offset, bytes_to_write);
+        pr_info("portfs_file_write: Write to file %s. global_offset = %lld, bytes = %ld",
+                file_entry->name, global_offset, bytes_to_write);
+
         ssize_t bytes_written = kernel_write(storage_filp,
                                              kbuf + bytes_written_total,
                                              bytes_to_write,

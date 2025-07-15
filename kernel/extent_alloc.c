@@ -50,6 +50,12 @@ int portfs_allocate_memory(struct portfs_superblock *psb,
 
         struct free_extent *free_ext = rb_entry(node, struct free_extent, node);
         remaining_blocks -= free_ext->length;
+
+        pr_info("portfs_allocate_memory: using free extent [%u ... %u)\n",
+                 free_ext->start_block,
+                 free_ext->start_block + free_ext->length);
+
+
         set_blocks_allocated(psb->block_bitmap,
                              free_ext->start_block,
                              free_ext->length);
@@ -88,14 +94,28 @@ int portfs_alloc_indirect_extents(struct portfs_superblock *psb,
 {
     if (!file_entry->indirect_extents)
     {
-        file_entry->indirect_extents = kmalloc(psb->block_size, GFP_KERNEL);
+        file_entry->indirect_extents = kzalloc(psb->block_size, GFP_KERNEL);
         if (!file_entry->indirect_extents)
             return -ENOMEM;
 
-        loff_t offset = file_entry->extents_block * psb->block_size;
-        ssize_t bytes_read = kernel_read(storage_filp, file_entry->indirect_extents, psb->block_size, &offset);
-        if (bytes_read != psb->block_size)
+        if (file_entry->extents_block == 0)
+        {
+            int free_block = find_free_block(psb);
+            if (free_block == -1)
+            {
+                pr_err("portfs_alloc_indirect_extents: Failed to find free block");
+                return -ENOSPC;
+            }
+            set_block_allocated(psb->block_bitmap, free_block);
+            file_entry->extents_block = free_block;
+        }
+        else
+        {
+            loff_t offset = file_entry->extents_block * psb->block_size;
+            ssize_t bytes_read = kernel_read(storage_filp, file_entry->indirect_extents, psb->block_size, &offset);
+            if (bytes_read != psb->block_size)
             return -EIO;
+        }
     }
     return 0;
 }

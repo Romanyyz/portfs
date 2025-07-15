@@ -3,6 +3,8 @@
 
 #include <linux/types.h>
 
+#include "shared_structs.h"
+
 static inline int is_block_allocated(uint8_t *bitmap, uint32_t block)
 {
     // TODO: probably need to lock bitmap
@@ -20,7 +22,7 @@ static inline void set_block_allocated(uint8_t *bitmap, uint32_t block)
 static inline void set_blocks_allocated(uint8_t *bitmap, uint32_t start_block, uint32_t length)
 {
     // TODO: probably need to lock bitmap
-    for (uint32_t i = start_block; i <= length; ++i)
+    for (uint32_t i = start_block; i < start_block + length; ++i)
     {
         set_block_allocated(bitmap, i);
     }
@@ -34,10 +36,12 @@ static inline void clear_block_allocated(uint8_t *bitmap, uint32_t block)
 }
 
 
-static inline int find_free_block(uint8_t *bitmap, uint32_t total_blocks)
+static inline int find_free_block(struct portfs_superblock *psb)
 {
     // TODO: probably need to lock bitmap
-    for (uint32_t i = 0; i < total_blocks; ++i)
+    uint8_t *bitmap = psb->block_bitmap;
+    uint32_t total_blocks = psb->total_blocks;
+    for (uint32_t i = psb->data_start; i < total_blocks; ++i)
     {
         if (!is_block_allocated(bitmap, i))
         {
@@ -51,7 +55,7 @@ static inline int find_free_block(uint8_t *bitmap, uint32_t total_blocks)
 static inline void clear_blocks_allocated(uint8_t *bitmap, uint32_t start_block, uint32_t length)
 {
     // TODO: probably need to lock bitmap
-    for (uint32_t i = start_block; i <= length; ++i)
+    for (uint32_t i = start_block; i < start_block + length; ++i)
     {
         clear_block_allocated(bitmap, i);
     }

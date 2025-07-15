@@ -74,7 +74,11 @@ void portfs_extent_tree_insert(struct rb_root *free_extent_tree, struct free_ext
         struct free_extent *this = rb_entry(*link, struct free_extent, node);
         parent = *link;
 
-        if (new->length < this->length)
+        if (new->length > this->length)
+            link = &(*link)->rb_left;
+        else if (new->length < this->length)
+            link = &(*link)->rb_right;
+        else if (new->start_block < this->start_block)
             link = &(*link)->rb_left;
         else
             link = &(*link)->rb_right;
