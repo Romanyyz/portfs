@@ -73,63 +73,6 @@ static int portfs_release_file(struct inode *inode, struct file *filp)
 }
 
 
-static ssize_t portfs_file_read(struct file *filp, char __user *buf, size_t count, loff_t *pos)
-{
-    pr_info("portfs_file_read: Read from file.");
-    struct inode *inode = filp->f_inode;
-    if (!inode || !buf)
-    {
-        return -EFAULT;
-    }
-
-    struct portfs_superblock *psb = inode->i_sb->s_fs_info;
-    struct filetable_entry *file_entry = inode->i_private;
-
-    if (*pos >= file_entry->size_in_bytes)
-        return 0;
-    if (*pos + count > file_entry->size_in_bytes)
-        count = file_entry->size_in_bytes - *pos;
-
-    loff_t global_file_offset = psb->data_start;
-    size_t current_size_extent_bytes = 0;
-    for (size_t i = 0; i < file_entry->extent_count; ++i)
-    {
-        const size_t start_extent_bytes = file_entry->direct_extents[i].start_block * psb->block_size;
-        const size_t end_extent_bytes = (file_entry->direct_extents[i].start_block + file_entry->direct_extents[i].length) * psb->block_size;
-        const size_t next_size_extent_bytes = end_extent_bytes - start_extent_bytes;
-        current_size_extent_bytes += next_size_extent_bytes;
-        if (*pos < current_size_extent_bytes)
-        {
-            global_file_offset = start_extent_bytes + (*pos);
-        }
-    }
-
-    char* kbuf = NULL;
-    kbuf = kmalloc(count, GFP_KERNEL);
-    if (!kbuf)
-    {
-        pr_err("portfs_file_read: Could not allocate memory");
-        return -ENOMEM;
-    }
-
-    ssize_t bytes_read = kernel_read(storage_filp, kbuf, count, &global_file_offset);
-    if (bytes_read > 0)
-    {
-        if (copy_to_user(buf, kbuf, bytes_read))
-        {
-            bytes_read = -EFAULT;
-        }
-        else
-        {
-            *pos += bytes_read;
-        }
-    }
-
-    kfree(kbuf);
-    return bytes_read;
-}
-
-
 static loff_t portfs_calc_global_offset(const struct portfs_superblock *psb,
                                         const struct filetable_entry *entry,
                                         loff_t local_offset)
@@ -163,6 +106,7 @@ static loff_t portfs_calc_global_offset(const struct portfs_superblock *psb,
     return -EFAULT;
 }
 
+
 static ssize_t portfs_calc_available_bytes(const struct portfs_superblock *psb,
                                            const struct filetable_entry *entry,
                                            loff_t local_offset)
@@ -186,6 +130,76 @@ static ssize_t portfs_calc_available_bytes(const struct portfs_superblock *psb,
     }
 
     return -EFAULT;
+}
+
+
+static ssize_t portfs_file_read(struct file *filp, char __user *buf, size_t count, loff_t *pos)
+{
+    pr_info("portfs_file_read: Read from file.");
+    struct inode *inode = filp->f_inode;
+    if (!inode || !buf)
+    {
+        return -EFAULT;
+    }
+
+    struct filetable_entry *file_entry = inode->i_private;
+    if (*pos >= file_entry->size_in_bytes)
+        return 0;
+    if (*pos + count > file_entry->size_in_bytes)
+        count = file_entry->size_in_bytes - *pos;
+
+
+    struct portfs_superblock *psb = inode->i_sb->s_fs_info;
+    if (file_entry->extent_count >= DIRECT_EXTENTS
+        && !file_entry->indirect_extents)
+    {
+        portfs_alloc_indirect_extents(psb, file_entry);
+    }
+
+    char* kbuf = NULL;
+    kbuf = kmalloc(count, GFP_KERNEL);
+    if (!kbuf)
+    {
+        pr_err("portfs_file_read: Could not allocate memory");
+        return -ENOMEM;
+    }
+
+    ssize_t bytes_read_total = 0;
+    size_t requested = count;
+    while (requested > 0)
+    {
+        loff_t global_offset = portfs_calc_global_offset(psb, file_entry, *pos);
+        size_t bytes_can_read = portfs_calc_available_bytes(psb, file_entry, *pos);
+        size_t bytes_to_read = min(requested, bytes_can_read);
+        if (bytes_to_read == 0)
+        {
+            pr_warn("portfs_file_read: No more bytes to read or available. Breaking loop.");
+            break;
+        }
+
+        ssize_t bytes_read = kernel_read(storage_filp, kbuf + bytes_read_total, bytes_to_read, &global_offset);
+        if (bytes_read != bytes_to_read)
+        {
+            kfree(kbuf);
+            pr_err("portfs_file_read: Error reading from storage file");
+            return -EIO;
+        }
+
+        *pos += bytes_read;
+        requested -= bytes_read;
+        bytes_read_total += bytes_read;
+    }
+
+    if (bytes_read_total == count)
+    {
+        if (copy_to_user(buf, kbuf, bytes_read_total))
+        {
+            bytes_read_total = -EFAULT;
+        }
+    }
+
+    kfree(kbuf);
+    return bytes_read_total;
 }
 
 
