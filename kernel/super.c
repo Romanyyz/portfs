@@ -31,7 +31,7 @@ static void portfs_put_super(struct super_block *sb)
     }
 
     if (psb->block_bitmap)
-        kfree(psb->block_bitmap);
+        vfree(psb->block_bitmap);
 
     kfree(psb);
     sb->s_fs_info = NULL;
@@ -387,7 +387,7 @@ static int portfs_init_block_bitmap(struct portfs_superblock * msb)
     loff_t offset = msb->block_bitmap_start * msb->block_size;
     size_t block_bitmap_size = msb->block_bitmap_size * msb->block_size;
 
-    msb->block_bitmap = kmalloc(block_bitmap_size, GFP_KERNEL);
+    msb->block_bitmap = vmalloc(block_bitmap_size);
     if (!(msb->block_bitmap))
     {
         pr_err("portfs_init_block_bitmap: Could not allocate memory\n");
@@ -400,7 +400,7 @@ static int portfs_init_block_bitmap(struct portfs_superblock * msb)
                                      &offset);
     if (bytes_read < 0)
     {
-        kfree(msb->block_bitmap);
+        vfree(msb->block_bitmap);
         return bytes_read;
     }
     return 0;
