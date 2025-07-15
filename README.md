@@ -1,5 +1,10 @@
 # portfs — Portable Linux Filesystem on a Regular File
 
+![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
+![Language: C](https://img.shields.io/badge/language-C-blue.svg)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
+![Status: WIP](https://img.shields.io/badge/status-Work_in_Progress-yellow)
+
 ## Status
 
 **Work in progress. Not production-ready.**
