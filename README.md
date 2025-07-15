@@ -11,7 +11,7 @@
 
 ## Overview
 
-portfs is an experimental filesystem for Linux designed to operate on a large file residing within an existing host filesystem, rather than a traditional block device.
+`portfs` is an experimental filesystem for Linux designed to operate on a large file residing within an existing host filesystem, rather than a traditional block device.
 This project is primarily an educational endeavor aimed at understanding Linux kernel internals, module development, and low-level kernel-level C programming.
 
 While portfs is currently under active development and not yet suitable for production use,
@@ -22,7 +22,7 @@ Design is evolving as the author learns and improves the internal architecture.
 
 ## Implemented Features
 
-portfs already supports all core file operations, allowing users to interact with data within its storage file just like a regular directory:
+`portfs` already supports all core file operations, allowing users to interact with data within its storage file just like a regular directory:
 - Full File Operations: Create, delete, copy, move, and search for files.
 - Linux Utility Compatibility: Standard commands like ls (in the root directory), cp, cmp, mv, hexdump, cat, and dd work correctly.
 - Application Compatibility: Files stored within portfs can be opened by standard applications such as text editors or image viewers.
@@ -33,7 +33,7 @@ portfs already supports all core file operations, allowing users to interact wit
 - Linux Kernel and C: The core of the project is kernel module written in C to interface directly with the kernel and VFS.
 - C++20 for Userspace Utility: A modern C++ utility is used for convenient user interaction and formatting the storage file.
 - Block Addressing and Extents: Fundamental approaches for efficient management of storage space.
-- Custom Block Allocator: portfs uses its own block allocator, based on the Red-Black Tree (rb_tree) implementation from the Linux kernel.
+- Custom Block Allocator: portfs uses its own block allocator, based on the Red-Black Tree (`rb_tree`) implementation from the Linux kernel.
 
 ## Planned Enhancements
 
@@ -56,7 +56,7 @@ The current version of portfs includes some temporary solutions that will be ref
 Follow these instructions to build and run portfs:
 
 ### Requirements
-- Operating System: Linux (latest stable version recommended). Tested on kernel 6.13 and 6.14 and EndeavourOS, CachyOS distros.
+- Operating System: Linux (latest stable version recommended). Tested on kernel 6.13 and 6.14 and `EndeavourOS`, `CachyOS` distros.
 - Compiler: GCC (latest version).
 - Build Tool: make.
 - Linux kernel source tree (required for building the kernel module).
@@ -90,7 +90,7 @@ sudo insmod portfs.ko
 # Or sudo modprobe portfs
 ```
 2. Create and format the storage file:
-  Use the portfs_tool user-space utility to create a file that will serve as your filesystem image. Follow the interactive prompts:
+  Use the `portfs_tool` user-space utility to create a file that will serve as your filesystem image. Follow the interactive prompts:
 ```bash
 user/portfs_tool.out
 ```
