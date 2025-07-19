@@ -142,12 +142,7 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
 
     for (size_t i = 0; i < file_entry->extent_count; ++i)
     {
-        const struct extent *ext;
-        if (i < DIRECT_EXTENTS)
-            ext = &file_entry->direct_extents[i];
-        else
-            ext = &file_entry->indirect_extents[i - DIRECT_EXTENTS];
-
+        const struct extent *ext = get_extent(file_entry, i);
         clear_blocks_allocated(psb->block_bitmap,
                                ext->start_block,
                                ext->length);

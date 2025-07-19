@@ -1,3 +1,5 @@
+#include "linux/vmalloc.h"
+
 #include "portfs.h"
 #include "inode.h"
 #include "file.h"
@@ -535,4 +537,5 @@ static void __exit portfs_exit(void)
 module_init(portfs_init);
 module_exit(portfs_exit);
 
+MODULE_DESCRIPTION("Portable filesystem for Linux on a regular file");
 MODULE_LICENSE("GPL");

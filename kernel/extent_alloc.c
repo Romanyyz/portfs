@@ -125,18 +125,10 @@ size_t portfs_get_allocated_size(const struct filetable_entry *entry,
                                  size_t block_size)
 {
     size_t total_blocks = 0;
-
-    for (size_t i = 0; i < entry->extent_count && i < DIRECT_EXTENTS; ++i)
+    for (size_t i = 0; i < entry->extent_count; ++i)
     {
-        total_blocks += entry->direct_extents[i].length;
-    }
-
-    if (entry->indirect_extents)
-    {
-        for (size_t i = 0; i < entry->extent_count - DIRECT_EXTENTS; ++i)
-        {
-            total_blocks += entry->indirect_extents[i].length;
-        }
+        const struct extent *ext = get_extent(entry, i);
+        total_blocks += ext->length;
     }
 
     return total_blocks * block_size;

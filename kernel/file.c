@@ -84,12 +84,7 @@ static loff_t portfs_calc_global_offset(const struct portfs_superblock *psb,
 
     for (size_t i = 0; i < entry->extent_count; ++i)
     {
-        const struct extent *ext;
-        if (i < DIRECT_EXTENTS)
-            ext = &entry->direct_extents[i];
-        else
-            ext = &entry->indirect_extents[i - DIRECT_EXTENTS];
-
+        const struct extent *ext = get_extent(entry, i);
         loff_t ext_size = ext->length * psb->block_size;
 
         if (offset_remaining < ext_size)
@@ -115,12 +110,7 @@ static ssize_t portfs_calc_available_bytes(const struct portfs_superblock *psb,
 
     for (size_t i = 0; i < entry->extent_count; ++i)
     {
-        const struct extent *ext;
-        if (i < DIRECT_EXTENTS)
-            ext = &entry->direct_extents[i];
-        else
-            ext = &entry->indirect_extents[i - DIRECT_EXTENTS];
-
+        const struct extent *ext = get_extent(entry, i);
         global_offset += ext->length * psb->block_size;
         if (global_offset > local_offset)
         {
