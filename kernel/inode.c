@@ -142,9 +142,15 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
 
     for (size_t i = 0; i < file_entry->extent_count; ++i)
     {
+        const struct extent *ext;
+        if (i < DIRECT_EXTENTS)
+            ext = &file_entry->direct_extents[i];
+        else
+            ext = &file_entry->indirect_extents[i - DIRECT_EXTENTS];
+
         clear_blocks_allocated(psb->block_bitmap,
-                               file_entry->direct_extents[i].start_block,
-                               file_entry->direct_extents[i].length);
+                               ext->start_block,
+                               ext->length);
     }
     memset(file_entry, 0, sizeof(*file_entry));
 
@@ -154,7 +160,9 @@ static int portfs_unlink(struct inode *dir, struct dentry *dentry)
     inode->i_private = NULL;
 
     clear_nlink(inode);
+
     mark_inode_dirty(inode);
+    mark_inode_dirty(dir);
 
     return 0;
 }
