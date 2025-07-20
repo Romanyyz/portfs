@@ -112,6 +112,6 @@ sudo umount /mnt/portfs_dir
 
 ## Contact
 
-If you have any questions, suggestions, or would like to contribute, feel free to reach out:
+If you have any questions or suggestions, feel free to reach out:
 
 Email: roman.khokhlachov@tuta.io
