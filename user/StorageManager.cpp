@@ -142,15 +142,15 @@ int StorageManager::writeFileTable(const portfs_superblock& msb)
     }
 
     constexpr size_t BUFFER_SIZE{1 * 1024 * 1024}; // 1MB
-    disk_filetable_entry file_entry{};
-    file_entry.name[0] = '\0';
+    disk_filetable_entry file_entry{0};
+    /*file_entry.name[0] = '\0';
     file_entry.size_in_bytes = 0;
     file_entry.extent_count = 0;
     file_entry.ino = 0;
     for (size_t i = 0; i < DIRECT_EXTENTS; ++i)
     {
         file_entry.direct_extents[i] = {0,0};
-    }
+    }*/
 
     std::vector<disk_filetable_entry> buffer;
     buffer.reserve(BUFFER_SIZE / sizeof(file_entry));

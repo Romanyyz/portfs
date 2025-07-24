@@ -1,9 +1,13 @@
+#include "linux/fs.h"
+#include "linux/stat.h"
+#include "linux/types.h"
 #include "linux/vmalloc.h"
 
 #include "portfs.h"
 #include "inode.h"
 #include "file.h"
 #include "shared_structs.h"
+#include "directory.h"
 
 #define PORTFS_MAGIC 0x506F5254
 #define MAX_STORAGE_PATH 256
@@ -87,6 +91,149 @@ static int portfs_sync_superblock(struct super_block *sb)
     return 0;
 }
 
+
+static void portfs_fill_file_data(struct filetable_entry *src_entry,
+                                  struct disk_filetable_entry *dst_entry)
+{
+    if (!src_entry || !dst_entry)
+        return;
+
+    dst_entry->ino = cpu_to_be32(src_entry->ino);
+    dst_entry->mode = cpu_to_be16(src_entry->mode);
+    dst_entry->size_in_bytes = cpu_to_be64(src_entry->size_in_bytes);
+
+    dst_entry->file.extent_count = cpu_to_be16(src_entry->file.extent_count);
+    dst_entry->file.extents_block = cpu_to_be32(src_entry->file.extents_block);
+
+    for (int k = 0; k < src_entry->file.extent_count; ++k)
+    {
+        dst_entry->file.direct_extents[k].start_block =
+            cpu_to_be32(src_entry->file.direct_extents[k].start_block);
+        dst_entry->file.direct_extents[k].length =
+            cpu_to_be32(src_entry->file.direct_extents[k].length);
+    }
+}
+
+
+static int portfs_write_file_data(struct portfs_superblock *psb,
+                                  struct filetable_entry *src_entry)
+{
+    if (!psb || !src_entry)
+        return -EINVAL;
+
+    if (src_entry->file.extent_count < DIRECT_EXTENTS
+        || src_entry->file.extents_block == 0
+        || !src_entry->indirect_extents)
+        return 0;
+
+    pr_info("portfs_write_file_data: Writing file data");
+    size_t count = src_entry->file.extent_count - DIRECT_EXTENTS;
+    size_t total_size = count * sizeof(struct disk_extent);
+
+    struct disk_extent *disk_extent_entries_buf = kmalloc(total_size, GFP_KERNEL);
+    if (!disk_extent_entries_buf)
+    {
+        pr_err("portfs_write_file_data: Failed to allocate memory");
+        return -ENOMEM;
+    }
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        struct disk_extent *dst_extent = &disk_extent_entries_buf[i];
+        struct extent *src_extent = &src_entry->indirect_extents[i];
+
+        dst_extent->start_block = cpu_to_be32(src_extent->start_block);
+        dst_extent->length = cpu_to_be32(src_extent->length);
+    }
+
+    loff_t pos = src_entry->file.extents_block * psb->block_size;
+    ssize_t bytes_written = kernel_write(storage_filp, disk_extent_entries_buf,
+                                         total_size, &pos);
+    if (bytes_written < 0)
+    {
+        pr_err("portfs_write_file_data: Failed to write file data");
+        kfree(disk_extent_entries_buf);
+        return bytes_written;
+    }
+    if (bytes_written != total_size)
+    {
+        pr_err("portfs_write_file_data: Failed to write file data");
+        kfree(disk_extent_entries_buf);
+        return -EIO;
+    }
+
+    kfree(disk_extent_entries_buf);
+    return 0;
+}
+
+
+static int portfs_write_dir_data(struct portfs_superblock *psb,
+                                 struct filetable_entry *src_entry)
+{
+    if (psb == NULL || src_entry == NULL)
+        return -EINVAL;
+
+    if (src_entry->dir.dir_block == 0 || !src_entry->dir_entries)
+        return 0;
+
+    pr_info("portfs_write_dir_data: Writing directory data");
+
+    size_t count = get_max_dir_entries(psb);
+    size_t total_size = count * sizeof(struct disk_dir_entry);
+
+    struct disk_dir_entry *disk_dir_entries_buf = kmalloc(total_size, GFP_KERNEL);
+    if (!disk_dir_entries_buf)
+    {
+        pr_err("portfs_write_dir_data: Failed to allocate memory");
+        return -ENOMEM;
+    }
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        struct disk_dir_entry *dst_dir_entry = &disk_dir_entries_buf[i];
+        struct dir_entry *src_dir_entry = &src_entry->dir_entries[i];
+
+        dst_dir_entry->inode_number = __be32_to_cpu(src_dir_entry->inode_number);
+        strncpy(dst_dir_entry->name, src_dir_entry->name,
+                sizeof(dst_dir_entry->name));
+    }
+
+    loff_t pos = src_entry->dir.dir_block * psb->block_size;
+    ssize_t bytes_written = kernel_write(storage_filp, disk_dir_entries_buf,
+                                         total_size, &pos);
+    if (bytes_written < 0)
+    {
+        pr_err("portfs_write_dir_data: Failed to write directory data");
+        kfree(disk_dir_entries_buf);
+        return bytes_written;
+    }
+    if (bytes_written != total_size)
+    {
+        pr_err("portfs_write_dir_data: Failed to write directory data");
+        kfree(disk_dir_entries_buf);
+        return -EIO;
+    }
+
+    kfree(disk_dir_entries_buf);
+    return 0;
+}
+
+
+static void portfs_fill_dir_data(struct filetable_entry *src_entry,
+                                 struct disk_filetable_entry *dst_entry)
+{
+    if (!src_entry || !dst_entry)
+        return;
+
+    dst_entry->ino = cpu_to_be32(src_entry->ino);
+    dst_entry->mode = cpu_to_be16(src_entry->mode);
+    dst_entry->size_in_bytes = cpu_to_be64(src_entry->size_in_bytes);
+
+    dst_entry->dir.dir_block = cpu_to_be32(src_entry->dir.dir_block);
+    dst_entry->dir.parent_dir_ino = cpu_to_be32(src_entry->dir.parent_dir_ino);
+}
+
+
 static int portfs_write_filetable(struct portfs_superblock *psb)
 {
     pr_info("portfs_write_filetable: Writing filetable");
@@ -117,18 +264,27 @@ static int portfs_write_filetable(struct portfs_superblock *psb)
             struct filetable_entry *src_entry = &filetable[i];
             struct disk_filetable_entry *dst_entry = &disk_entries_buf[curr_entries];
 
-            memcpy(dst_entry->name, src_entry->name, sizeof(dst_entry->name));
-            dst_entry->ino = cpu_to_be64(src_entry->ino);
-            dst_entry->size_in_bytes = cpu_to_be64(src_entry->size_in_bytes);
-            dst_entry->extent_count = cpu_to_be16(src_entry->extent_count);
-            dst_entry->extents_block = cpu_to_be32(src_entry->extents_block);
-
-            for (int k = 0; k < src_entry->extent_count; ++k)
+            switch (src_entry->mode & S_IFMT)
             {
-                dst_entry->direct_extents[k].start_block = cpu_to_be32(src_entry->direct_extents[k].start_block);
-                dst_entry->direct_extents[k].length = cpu_to_be32(src_entry->direct_extents[k].length);
+                case S_IFREG:
+                {
+                    portfs_fill_file_data(src_entry, dst_entry);
+                    portfs_write_file_data(psb, src_entry);
+                    break;
+                }
+                case S_IFDIR:
+                {
+                    portfs_fill_dir_data(src_entry, dst_entry);
+                    portfs_write_dir_data(psb, src_entry);
+                    break;
+                }
+                default:
+                {
+                    break;
+                }
             }
         }
+
         size_t curr_size = curr_entries * sizeof(*disk_entries_buf);
         ssize_t bytes_written = kernel_write(storage_filp, (void *)disk_entries_buf, curr_size, &current_offset);
         if (bytes_written != curr_size)
@@ -137,6 +293,7 @@ static int portfs_write_filetable(struct portfs_superblock *psb)
             kfree(disk_entries_buf);
             return -EIO;
         }
+
         memset(disk_entries_buf, 0, curr_size);
     }
 
@@ -359,17 +516,31 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
         struct disk_filetable_entry *disk_file_entry = &disk_file_entry_array[i];
         struct filetable_entry *entry = &msb->filetable[i];
 
-        memcpy(entry->name, disk_file_entry->name, sizeof(disk_file_entry->name));
-        entry->size_in_bytes = be64_to_cpu(disk_file_entry->size_in_bytes);
-        entry->extent_count = be16_to_cpu(disk_file_entry->extent_count);
-        entry->extents_block = be32_to_cpu(disk_file_entry->extents_block);
         entry->ino         = be64_to_cpu(disk_file_entry->ino);
-        for (size_t i = 0; i < disk_file_entry->extent_count; ++i)
+        entry->mode = be16_to_cpu(disk_file_entry->mode);
+        entry->size_in_bytes = be64_to_cpu(disk_file_entry->size_in_bytes);
+
+
+        if ((entry->mode & S_IFMT) == S_IFREG)
         {
-            entry->direct_extents[i].start_block = be32_to_cpu(disk_file_entry->direct_extents[i].start_block);
-            entry->direct_extents[i].length = be32_to_cpu(disk_file_entry->direct_extents[i].length);
+            entry->file.extent_count = be16_to_cpu(disk_file_entry->file.extent_count);
+            entry->file.extents_block = be32_to_cpu(disk_file_entry->file.extents_block);
+            for (size_t i = 0; i < DIRECT_EXTENTS; ++i)
+            {
+                entry->file.direct_extents[i].start_block =
+                    be32_to_cpu(disk_file_entry->file.direct_extents[i].start_block);
+                entry->file.direct_extents[i].length =
+                    be32_to_cpu(disk_file_entry->file.direct_extents[i].length);
+            }
         }
+        else if ((entry->mode & S_IFMT) == S_IFDIR)
+        {
+            entry->dir.dir_block = be32_to_cpu(disk_file_entry->dir.dir_block);
+            entry->dir.parent_dir_ino = be32_to_cpu(disk_file_entry->dir.parent_dir_ino);
+        }
+
         entry->indirect_extents = NULL;
+        entry->dir_entries = NULL;
     }
 
     vfree(disk_file_entry_array);
@@ -461,6 +632,23 @@ static int portfs_init_fs_data(struct super_block *sb, void *data)
 }
 
 
+static struct filetable_entry *portfs_get_fe_root(struct portfs_superblock *psb)
+{
+    if (!psb)
+        return ERR_PTR(-EINVAL);
+
+    size_t num_entries = (psb->filetable_size * psb->block_size) / sizeof(*psb->filetable);
+    for (size_t i = 0; i < num_entries; ++i)
+    {
+        struct filetable_entry *fe = &psb->filetable[i];
+        if (fe->ino == 1)
+            return fe;
+    }
+
+    return NULL;
+}
+
+
 static int portfs_fill_super(struct super_block *sb, void *data, int silent)
 {
     pr_info("portfs_fill_super: Started\n");
@@ -492,10 +680,29 @@ static int portfs_fill_super(struct super_block *sb, void *data, int silent)
     root_inode->i_op = &portfs_dir_inode_operations;
     root_inode->i_fop = &portfs_dir_file_operations;
 
+    struct filetable_entry *file_entry = portfs_get_fe_root(sb->s_fs_info);
+    if (IS_ERR(file_entry))
+        return PTR_ERR(file_entry);
+
+    if (!file_entry)
+    {
+        file_entry = portfs_find_free_file_entry(sb->s_fs_info);
+        if (file_entry == NULL)
+            return -ENOSPC;
+
+        file_entry->mode = root_inode->i_mode;
+        file_entry->ino = root_inode->i_ino;
+        file_entry->size_in_bytes = 0;
+        file_entry->dir.parent_dir_ino = root_inode->i_ino;
+    }
+
+    root_inode->i_private = file_entry;
+
     insert_inode_hash(root_inode);
 
     sb->s_root = d_make_root(root_inode);
-    if (!sb->s_root) {
+    if (!sb->s_root)
+    {
         pr_err("portfs_fill_super: Failed to make_root\n");
         iput(root_inode);
         filp_close(storage_filp, NULL);

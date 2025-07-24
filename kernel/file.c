@@ -1,5 +1,9 @@
 #include "file.h"
 
+#include "linux/err.h"
+#include "linux/fs.h"
+#include "linux/fs_types.h"
+#include "linux/stat.h"
 #include "linux/types.h"
 
 #include "portfs.h"
@@ -7,35 +11,68 @@
 #include "extent_tree.h"
 #include "extent_alloc.h"
 #include "shared_structs.h"
+#include "directory.h"
+#include "inode.h"
+
+static inline uint8_t mode_to_dtype(uint16_t mode)
+{
+    if (S_ISDIR(mode))
+        return DT_DIR;
+    else if (S_ISREG(mode))
+        return DT_REG;
+    else
+        return DT_UNKNOWN;
+}
+
 
 static int portfs_iterate_shared(struct file *filp, struct dir_context *ctx)
 {
+    pr_info("portfs_iterate_shared: Begin");
     struct inode *inode = filp->f_inode;
     struct portfs_superblock *psb = inode->i_sb->s_fs_info;
 
     if (ctx->pos >= psb->max_file_count)
         return 0;
 
-    if (!dir_emit_dots(filp, ctx))
-        return -ENOMEM;
-
-    const size_t max_files = psb->max_file_count;
-    const size_t start_index = ctx->pos - 2;
-    pr_info("portfs_iterate_shared: Starting from index %zu", start_index);
-    for (size_t i = start_index; i < max_files; ++i)
+    if (ctx->pos == 0)
     {
-        struct filetable_entry *file_entry = &psb->filetable[i];
-        if (file_entry->name[0] == '\0')
-            continue;
-
-        pr_info("portfs_iterate_shared: Found file: %s at index %zu", file_entry->name, i);
-        if (!dir_emit(ctx, file_entry->name, strlen(file_entry->name), file_entry->ino, DT_REG))
-            return -ENOMEM;
-
-        ctx->pos = i + 1;
+        if (!dir_emit_dots(filp, ctx))
+            return -EFAULT;
     }
 
-    ctx->pos += 2;
+    struct filetable_entry *dir = inode->i_private;
+    if (!dir)
+    {
+        pr_err("portfs_iterate_shared: Directory entry not found");
+        return -ENOENT;
+    }
+
+    if (!dir->dir_entries)
+        portfs_load_dir_data(psb, dir);
+
+    uint16_t num_entries = get_max_dir_entries(psb);
+
+    pr_info("portfs_iterate_shared: Starting from index %lld", ctx->pos - 2);
+    for (; ctx->pos - 2 < num_entries; ctx->pos++)
+    {
+        struct dir_entry *d_entry = &dir->dir_entries[ctx->pos - 2];
+        if (d_entry->inode_number == 0)
+            continue;
+
+        pr_info("portfs_iterate_shared: Found file: %s at index %lld", d_entry->name, ctx->pos - 2);
+        struct inode *child_inode = portfs_get_inode_by_number(inode->i_sb, d_entry->inode_number);
+        if (!child_inode || IS_ERR(child_inode))
+            continue;
+
+        pr_info("portfs_iterate_shared: Emitting file: %s at index %lld", d_entry->name, ctx->pos - 2);
+        if (!dir_emit(ctx, d_entry->name, strlen(d_entry->name),
+                      d_entry->inode_number, mode_to_dtype(child_inode->i_mode)))
+        {
+            iput(child_inode);
+            return -ENOMEM;
+        }
+        iput(child_inode);
+    }
 
     pr_info("portfs_iterate_shared: Finished iteration, setting ctx->pos to %lld", ctx->pos);
     return 0;
@@ -79,10 +116,9 @@ static loff_t portfs_calc_global_offset(const struct portfs_superblock *psb,
 {
     pr_info("portfs_calc_global_offset: Local offset = %lld", local_offset);
 
-    loff_t global_offset = 0;
     loff_t offset_remaining = local_offset;
 
-    for (size_t i = 0; i < entry->extent_count; ++i)
+    for (size_t i = 0; i < entry->file.extent_count; ++i)
     {
         const struct extent *ext = get_extent(entry, i);
         loff_t ext_size = ext->length * psb->block_size;
@@ -108,7 +144,7 @@ static ssize_t portfs_calc_available_bytes(const struct portfs_superblock *psb,
 {
     size_t global_offset = 0;
 
-    for (size_t i = 0; i < entry->extent_count; ++i)
+    for (size_t i = 0; i < entry->file.extent_count; ++i)
     {
         const struct extent *ext = get_extent(entry, i);
         global_offset += ext->length * psb->block_size;
@@ -140,7 +176,7 @@ static ssize_t portfs_file_read(struct file *filp, char __user *buf, size_t coun
 
 
     struct portfs_superblock *psb = inode->i_sb->s_fs_info;
-    if (file_entry->extent_count >= DIRECT_EXTENTS
+    if (file_entry->file.extent_count >= DIRECT_EXTENTS
         && !file_entry->indirect_extents)
     {
         portfs_alloc_indirect_extents(psb, file_entry);
@@ -254,8 +290,8 @@ static ssize_t portfs_file_write(struct file *filp, const char __user *buf, size
         }
         size_t bytes_to_write = min(available_bytes, count);
 
-        pr_info("portfs_file_write: Write to file %s. global_offset = %lld, bytes = %ld",
-                file_entry->name, global_offset, bytes_to_write);
+        pr_info("portfs_file_write: Write to file. global_offset = %lld, bytes = %ld",
+                global_offset, bytes_to_write);
 
         ssize_t bytes_written = kernel_write(storage_filp,
                                              kbuf + bytes_written_total,
