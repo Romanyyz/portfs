@@ -22,8 +22,6 @@ typedef uint64_t portfs_be64;
 
 #define DIRECT_EXTENTS 4
 
-// #ifdef __KERNEL__
-
 struct portfs_disk_superblock {
     portfs_be32 magic_number;
     portfs_be32 block_size;
@@ -47,17 +45,30 @@ struct disk_extent
     portfs_be32 length;
 }__attribute__((packed));
 
-struct disk_filetable_entry
+struct disk_file_data
 {
-    char name[64];
-    portfs_be64 ino;
-    portfs_be64 size_in_bytes;
-    portfs_be16 extent_count;
+    portfs_be32 extent_count;
     portfs_be32 extents_block;
     struct disk_extent direct_extents[DIRECT_EXTENTS];
-}__attribute__((packed));
+} __attribute__((packed));
 
-// #endif // __KERNEL__
+struct disk_dir_data
+{
+    portfs_be32 dir_block;
+    portfs_be32 parent_dir_ino;
+} __attribute__((packed));
+
+struct disk_filetable_entry
+{
+    portfs_be32 ino;
+    portfs_be16 mode;
+    portfs_be64 size_in_bytes;
+    union
+    {
+        struct disk_file_data file;
+        struct disk_dir_data dir;
+    };
+} __attribute__((packed));
 
 #ifdef __cplusplus
 extern "C"
@@ -70,16 +81,34 @@ struct extent
     uint32_t length;
 };
 
-struct filetable_entry
+struct file_data
 {
-    char name[64];
-    uint64_t ino;
-    uint64_t size_in_bytes;
     uint16_t extent_count;
     uint32_t extents_block;
     struct extent direct_extents[DIRECT_EXTENTS];
+};
+
+struct dir_data
+{
+    uint32_t dir_block;
+    uint32_t parent_dir_ino;
+};
+
+struct dir_entry;
+struct filetable_entry
+{
+    uint32_t ino;
+    uint16_t mode;
+    uint64_t size_in_bytes;
+    union
+    {
+        struct file_data file;
+        struct dir_data dir;
+    };
+
 #ifdef __KERNEL__
     struct extent *indirect_extents;
+    struct dir_entry *dir_entries;
 #endif // __KERNEL__
 };
 

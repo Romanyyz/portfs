@@ -20,8 +20,8 @@ int portfs_allocate_memory(struct portfs_superblock *psb,
                            struct filetable_entry *file_entry,
                            size_t bytes_to_allocate)
 {
-    pr_info("portfs_allocate_memory: Allocating %zu bytes for file %s",
-            bytes_to_allocate, file_entry->name);
+    pr_info("portfs_allocate_memory: Allocating %zu bytes for file",
+            bytes_to_allocate);
     if (!psb || ! file_entry || bytes_to_allocate == 0)
         return -EINVAL;
 
@@ -31,7 +31,7 @@ int portfs_allocate_memory(struct portfs_superblock *psb,
     struct rb_root free_extent_tree = RB_ROOT;
     portfs_build_extent_tree(psb, &free_extent_tree);
 
-    size_t free_ext_idx = file_entry->extent_count;
+    size_t free_ext_idx = file_entry->file.extent_count;
     if (free_ext_idx >= DIRECT_EXTENTS)
     {
         portfs_alloc_indirect_extents(psb, file_entry);
@@ -44,7 +44,7 @@ int portfs_allocate_memory(struct portfs_superblock *psb,
     {
         if (free_ext_idx >= max_extents)
         {
-            pr_warn("portfs_allocate_memory: Too many extents for file %s", file_entry->name);
+            pr_warn("portfs_allocate_memory: Too many extents for file");
             break;
         }
 
@@ -62,8 +62,8 @@ int portfs_allocate_memory(struct portfs_superblock *psb,
 
         if (free_ext_idx < DIRECT_EXTENTS)
         {
-            file_entry->direct_extents[free_ext_idx].start_block = free_ext->start_block;
-            file_entry->direct_extents[free_ext_idx].length = free_ext->length;
+            file_entry->file.direct_extents[free_ext_idx].start_block = free_ext->start_block;
+            file_entry->file.direct_extents[free_ext_idx].length = free_ext->length;
         }
         else
         {
@@ -80,7 +80,7 @@ int portfs_allocate_memory(struct portfs_superblock *psb,
             break;
     }
 
-    file_entry->extent_count = free_ext_idx;
+    file_entry->file.extent_count = free_ext_idx;
     portfs_destroy_extent_tree(&free_extent_tree);
     if (remaining_blocks > 0)
         pr_err("portfs_allocate_memory: Not enough space. Remaining blocks: %zu", remaining_blocks);
@@ -98,7 +98,7 @@ int portfs_alloc_indirect_extents(struct portfs_superblock *psb,
         if (!file_entry->indirect_extents)
             return -ENOMEM;
 
-        if (file_entry->extents_block == 0)
+        if (file_entry->file.extents_block == 0)
         {
             int free_block = find_free_block(psb);
             if (free_block == -1)
@@ -107,11 +107,11 @@ int portfs_alloc_indirect_extents(struct portfs_superblock *psb,
                 return -ENOSPC;
             }
             set_block_allocated(psb->block_bitmap, free_block);
-            file_entry->extents_block = free_block;
+            file_entry->file.extents_block = free_block;
         }
         else
         {
-            loff_t offset = file_entry->extents_block * psb->block_size;
+            loff_t offset = file_entry->file.extents_block * psb->block_size;
             ssize_t bytes_read = kernel_read(storage_filp, file_entry->indirect_extents, psb->block_size, &offset);
             if (bytes_read != psb->block_size)
             return -EIO;
@@ -125,7 +125,7 @@ size_t portfs_get_allocated_size(const struct filetable_entry *entry,
                                  size_t block_size)
 {
     size_t total_blocks = 0;
-    for (size_t i = 0; i < entry->extent_count; ++i)
+    for (size_t i = 0; i < entry->file.extent_count; ++i)
     {
         const struct extent *ext = get_extent(entry, i);
         total_blocks += ext->length;

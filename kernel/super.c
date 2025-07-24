@@ -117,16 +117,18 @@ static int portfs_write_filetable(struct portfs_superblock *psb)
             struct filetable_entry *src_entry = &filetable[i];
             struct disk_filetable_entry *dst_entry = &disk_entries_buf[curr_entries];
 
-            memcpy(dst_entry->name, src_entry->name, sizeof(dst_entry->name));
+            //memcpy(dst_entry->name, src_entry->name, sizeof(dst_entry->name));
             dst_entry->ino = cpu_to_be64(src_entry->ino);
             dst_entry->size_in_bytes = cpu_to_be64(src_entry->size_in_bytes);
-            dst_entry->extent_count = cpu_to_be16(src_entry->extent_count);
-            dst_entry->extents_block = cpu_to_be32(src_entry->extents_block);
+            dst_entry->file.extent_count = cpu_to_be16(src_entry->file.extent_count);
+            dst_entry->file.extents_block = cpu_to_be32(src_entry->file.extents_block);
 
-            for (int k = 0; k < src_entry->extent_count; ++k)
+            for (int k = 0; k < src_entry->file.extent_count; ++k)
             {
-                dst_entry->direct_extents[k].start_block = cpu_to_be32(src_entry->direct_extents[k].start_block);
-                dst_entry->direct_extents[k].length = cpu_to_be32(src_entry->direct_extents[k].length);
+                dst_entry->file.direct_extents[k].start_block =
+                    cpu_to_be32(src_entry->file.direct_extents[k].start_block);
+                dst_entry->file.direct_extents[k].length =
+                    cpu_to_be32(src_entry->file.direct_extents[k].length);
             }
         }
         size_t curr_size = curr_entries * sizeof(*disk_entries_buf);
@@ -359,15 +361,17 @@ static int portfs_init_filetable(struct portfs_superblock *msb)
         struct disk_filetable_entry *disk_file_entry = &disk_file_entry_array[i];
         struct filetable_entry *entry = &msb->filetable[i];
 
-        memcpy(entry->name, disk_file_entry->name, sizeof(disk_file_entry->name));
+        //memcpy(entry->name, disk_file_entry->name, sizeof(disk_file_entry->name));
         entry->size_in_bytes = be64_to_cpu(disk_file_entry->size_in_bytes);
-        entry->extent_count = be16_to_cpu(disk_file_entry->extent_count);
-        entry->extents_block = be32_to_cpu(disk_file_entry->extents_block);
+        entry->file.extent_count = be16_to_cpu(disk_file_entry->file.extent_count);
+        entry->file.extents_block = be32_to_cpu(disk_file_entry->file.extents_block);
         entry->ino         = be64_to_cpu(disk_file_entry->ino);
-        for (size_t i = 0; i < disk_file_entry->extent_count; ++i)
+        for (size_t i = 0; i < disk_file_entry->file.extent_count; ++i)
         {
-            entry->direct_extents[i].start_block = be32_to_cpu(disk_file_entry->direct_extents[i].start_block);
-            entry->direct_extents[i].length = be32_to_cpu(disk_file_entry->direct_extents[i].length);
+            entry->file.direct_extents[i].start_block =
+                be32_to_cpu(disk_file_entry->file.direct_extents[i].start_block);
+            entry->file.direct_extents[i].length =
+                be32_to_cpu(disk_file_entry->file.direct_extents[i].length);
         }
         entry->indirect_extents = NULL;
     }
@@ -461,6 +465,23 @@ static int portfs_init_fs_data(struct super_block *sb, void *data)
 }
 
 
+static struct filetable_entry *portfs_get_fe_root(struct portfs_superblock *psb)
+{
+    if (!psb)
+        return ERR_PTR(-EINVAL);
+
+    size_t num_entries = (psb->filetable_size * psb->block_size) / sizeof(*psb->filetable);
+    for (size_t i = 0; i < num_entries; ++i)
+    {
+        struct filetable_entry *fe = &psb->filetable[i];
+        if (fe->ino == 1)
+            return fe;
+    }
+
+    return NULL;
+}
+
+
 static int portfs_fill_super(struct super_block *sb, void *data, int silent)
 {
     pr_info("portfs_fill_super: Started\n");
@@ -492,10 +513,29 @@ static int portfs_fill_super(struct super_block *sb, void *data, int silent)
     root_inode->i_op = &portfs_dir_inode_operations;
     root_inode->i_fop = &portfs_dir_file_operations;
 
+    struct filetable_entry *file_entry = portfs_get_fe_root(sb->s_fs_info);
+    if (IS_ERR(file_entry))
+        return PTR_ERR(file_entry);
+
+    if (!file_entry)
+    {
+        file_entry = portfs_find_free_file_entry(sb->s_fs_info);
+        if (file_entry == NULL)
+            return -ENOSPC;
+
+        file_entry->mode = root_inode->i_mode;
+        file_entry->ino = root_inode->i_ino;
+        file_entry->size_in_bytes = 0;
+        file_entry->dir.parent_dir_ino = root_inode->i_ino;
+    }
+
+    root_inode->i_private = file_entry;
+
     insert_inode_hash(root_inode);
 
     sb->s_root = d_make_root(root_inode);
-    if (!sb->s_root) {
+    if (!sb->s_root)
+    {
         pr_err("portfs_fill_super: Failed to make_root\n");
         iput(root_inode);
         filp_close(storage_filp, NULL);

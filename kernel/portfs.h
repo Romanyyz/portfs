@@ -10,7 +10,7 @@
 static inline const struct extent *get_extent(const struct filetable_entry *fe, size_t i)
 {
     return (i < DIRECT_EXTENTS)
-        ? &fe->direct_extents[i]
+        ? &fe->file.direct_extents[i]
         : &fe->indirect_extents[i - DIRECT_EXTENTS];
 }
 
