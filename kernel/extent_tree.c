@@ -8,7 +8,7 @@
 #include "linux/slab.h"
 
 #include "shared_structs.h"
-#include "bitmap.h"
+#include "block_bitmap.h"
 
 int portfs_build_extent_tree(struct portfs_superblock *psb,
                              struct rb_root *free_extent_tree)

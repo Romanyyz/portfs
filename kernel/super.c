@@ -6,8 +6,8 @@
 #include "portfs.h"
 #include "inode.h"
 #include "file.h"
-#include "shared_structs.h"
 #include "directory.h"
+#include "shared_structs.h"
 
 #define PORTFS_MAGIC 0x506F5254
 #define MAX_STORAGE_PATH 256
@@ -198,6 +198,8 @@ static int portfs_write_dir_data(struct portfs_superblock *psb,
                 sizeof(dst_dir_entry->name));
     }
 
+    pr_info("portfs_write_dir_data: Writing directory data: ino = %u, dirdata_block = %d",
+                src_entry->ino, src_entry->dir.dir_block);
     loff_t pos = src_entry->dir.dir_block * psb->block_size;
     ssize_t bytes_written = kernel_write(storage_filp, disk_dir_entries_buf,
                                          total_size, &pos);
@@ -584,9 +586,8 @@ static int portfs_init_fs_data(struct super_block *sb, void *data)
 {
     pr_info("portfs_init_fs_data: Initializing portfs service data\n");
     char *options = (char*)data;
-    char *path = NULL;
 
-    path = strstr(options, "path=");
+    char *path = strstr(options, "path=");
     if (path)
     {
         path += 5;

@@ -6,7 +6,7 @@
 #include "extent_tree.h"
 #include "portfs.h"
 #include "shared_structs.h"
-#include "bitmap.h"
+#include "block_bitmap.h"
 
 #define BLOCK_ALLOC_SCALE 1000
 #define BLOCK_ALLOC_MULTIPLIER 1500

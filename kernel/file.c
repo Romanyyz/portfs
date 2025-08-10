@@ -7,7 +7,6 @@
 #include "linux/types.h"
 
 #include "portfs.h"
-#include "bitmap.h"
 #include "extent_tree.h"
 #include "extent_alloc.h"
 #include "shared_structs.h"

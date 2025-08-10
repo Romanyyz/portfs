@@ -5,59 +5,43 @@
 
 #include "shared_structs.h"
 
-static inline int is_block_allocated(uint8_t *bitmap, uint32_t block)
+static inline int portfs_bitmap_is_set(uint8_t *bitmap, uint32_t bit)
 {
     // TODO: probably need to lock bitmap
-    return bitmap[block / 8] & (1 << (block % 8));
+    return bitmap[bit / 8] & (1 << (bit % 8));
 }
 
 
-static inline void set_block_allocated(uint8_t *bitmap, uint32_t block)
+static inline void portfs_bitmap_set_bit(uint8_t *bitmap, uint32_t bit)
 {
     // TODO: probably need to lock bitmap
-    bitmap[block / 8] |= (1 << (block % 8));
+    bitmap[bit / 8] |= (1 << (bit % 8));
 }
 
 
-static inline void set_blocks_allocated(uint8_t *bitmap, uint32_t start_block, uint32_t length)
+static inline void portfs_bitmap_set_bits(uint8_t *bitmap, uint32_t start_bit, uint32_t length)
 {
     // TODO: probably need to lock bitmap
-    for (uint32_t i = start_block; i < start_block + length; ++i)
+    for (uint32_t i = start_bit; i < start_bit + length; ++i)
     {
-        set_block_allocated(bitmap, i);
+        portfs_bitmap_set_bit(bitmap, i);
     }
 }
 
 
-static inline void clear_block_allocated(uint8_t *bitmap, uint32_t block)
+static inline void portfs_bitmap_clear_bit(uint8_t *bitmap, uint32_t bit)
 {
     // TODO: probably need to lock bitmap
-    bitmap[block / 8] &= ~(1 << (block % 8));
+    bitmap[bit / 8] &= ~(1 << (bit % 8));
 }
 
 
-static inline int find_free_block(struct portfs_superblock *psb)
+static inline void portfs_bitmap_clear_bits(uint8_t *bitmap, uint32_t start_bit, uint32_t length)
 {
     // TODO: probably need to lock bitmap
-    uint8_t *bitmap = psb->block_bitmap;
-    uint32_t total_blocks = psb->total_blocks;
-    for (uint32_t i = psb->data_start; i < total_blocks; ++i)
+    for (uint32_t i = start_bit; i < start_bit + length; ++i)
     {
-        if (!is_block_allocated(bitmap, i))
-        {
-            return i;
-        }
-    }
-    return -1;
-}
-
-
-static inline void clear_blocks_allocated(uint8_t *bitmap, uint32_t start_block, uint32_t length)
-{
-    // TODO: probably need to lock bitmap
-    for (uint32_t i = start_block; i < start_block + length; ++i)
-    {
-        clear_block_allocated(bitmap, i);
+        portfs_bitmap_clear_bit(bitmap, i);
     }
 }
 

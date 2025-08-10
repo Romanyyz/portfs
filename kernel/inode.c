@@ -7,7 +7,7 @@
 #include "file.h"
 #include "portfs.h"
 #include "shared_structs.h"
-#include "bitmap.h"
+#include "block_bitmap.h"
 #include "extent_alloc.h"
 #include "directory.h"
 

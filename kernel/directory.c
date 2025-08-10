@@ -7,7 +7,7 @@
 #include "portfs.h"
 #include "inode.h"
 #include "file.h"
-#include "bitmap.h"
+#include "block_bitmap.h"
 
 static int portfs_de_alloc_block(struct portfs_superblock *psb, struct filetable_entry *parent_dir)
 {
