@@ -2,11 +2,10 @@ obj-m += portfs.o
 portfs-objs := super.o inode.o file.o storage.o extent_tree.o extent_alloc.o directory.o
 
 PWD := $(CURDIR)
-PROJECT_ROOT := $(abspath ..)
-EXTRA_CFLAGS += -I$(PROJECT_ROOT)/common
+KBUILD_CFLAGS += -I../common/
 
 all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
